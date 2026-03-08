@@ -18,9 +18,20 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 // Connect to MongoDB
+if (!process.env.MONGODB_URI) {
+  console.error('❌ CRITICAL: MONGODB_URI is not defined in environment variables!');
+} else {
+  console.log('⏳ Attempting to connect to MongoDB...');
+}
+
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Connected to MongoDB Atlas'))
-  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+  .catch(err => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    if (err.name === 'MongooseServerSelectionError') {
+      console.error('👉 Tip: Check your IP Whitelist in MongoDB Atlas and ensure 0.0.0.0/0 is added.');
+    }
+  });
 
 const app = express();
 const port = process.env.PORT || 5000;
