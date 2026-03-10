@@ -136,7 +136,7 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
         await Session.findOneAndUpdate(
             { id: session.id, userId: req.user._id },
             { ...session, userId: req.user._id },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
         res.json({ success: true });
     } catch (e) {

@@ -13,8 +13,8 @@ if (!emailToPromote) {
 const promote = async () => {
     try {
         await mongoose.connect(process.env.MONGODB_URI);
-        const user = await User.findOneAndUpdate({ email: emailToPromote }, { role: 'admin' }, { new: true });
-        
+        const user = await User.findOneAndUpdate({ email: emailToPromote }, { role: 'admin' }, { returnDocument: 'after' });
+
         if (!user) {
             console.error(`User with email ${emailToPromote} not found.`);
         } else {
