@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key } from 'lucide-react';
+import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,14 +59,14 @@ function App() {
     const [topic, setTopic] = useState('');
     const [mode, setMode] = useState('beginner');
     const [language, setLanguage] = useState('English');
-    
+
     // Auth States
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [userEmail, setUserEmail] = useState('');
     const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
     const [showProfile, setShowProfile] = useState(false);
-    const [authForm, setAuthForm] = useState({ email: '', password: '' });
-    
+    const [authForm, setAuthForm] = useState({ email: '', password: '', confirmPassword: '' });
+
     // API Key States
     const [apiKey, setApiKey] = useState('');
     const [isApiKeySet, setIsApiKeySet] = useState(false);
@@ -87,6 +87,19 @@ function App() {
     const [progress, setProgress] = useState({ step: 0, total_steps: 0, current_concept: '' });
     // 🤔 MCQ State (Feature 2 - Socratic)
     const [mcqState, setMcqState] = useState({}); // { [msgIndex]: { selected, submitted } }
+
+    // 🗺️ EXPLORE FLOW STATE
+    const [appStage, setAppStage] = useState('home');
+    const [subtopics, setSubtopics] = useState([]);
+    const [selectedSubtopics, setSelectedSubtopics] = useState([]);
+    const [selectedSubtopic, setSelectedSubtopic] = useState(null);
+    const [roadmapData, setRoadmapData] = useState(null);
+    const [roadmapType, setRoadmapType] = useState('full');
+    const [allSelected, setAllSelected] = useState(false);
+    // 👁️ Show/hide toggles
+    const [showKey, setShowKey] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
     const chatEndRef = useRef(null);
 
     // Load sessions and check auth status on mount
@@ -103,7 +116,7 @@ function App() {
                 const meRes = await axios.get(`${BASE_URL}/api/auth/me`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                
+
                 setIsAuthenticated(true);
                 setUserEmail(meRes.data.email);
                 setIsApiKeySet(meRes.data.hasKey);
@@ -113,7 +126,7 @@ function App() {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setSessions(sessionRes.data);
-                
+
             } catch (e) {
                 console.error("Auth check failed:", e);
                 setIsAuthenticated(false);
@@ -148,7 +161,7 @@ function App() {
     // 🧠 ROLLING SUMMARY MEMORY
     const triggerSummary = async (currentMessages, currentTopic, currentMode, currentLanguage) => {
         if (currentMessages.length < 6) return;
-        
+
         const token = localStorage.getItem('ai-tutor-token');
         if (!token) return;
 
@@ -179,19 +192,124 @@ function App() {
         scrollToBottom();
     }, [messages]);
 
-    const startTutor = async (e) => {
+    // Step 1: Topic submit → fetch subtopics
+    const handleTopicExplore = async (e) => {
         e.preventDefault();
         if (!topic.trim() || !isApiKeySet) return;
+        setIsLoading(true);
+        setError(null);
+        setSubtopics([]);
+        const token = localStorage.getItem('ai-tutor-token');
+        try {
+            const res = await axios.post(`${BASE_URL}/api/explore`, { topic, language }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const subs = res.data.subtopics || [];
+            if (subs.length === 0) {
+                setError('AI ne subtopics generate nahi kiye. Dobara try karo.');
+                return;
+            }
+            setSubtopics(subs);
+            setAppStage('explore');
+        } catch (err) {
+            const msg = err.response?.data?.error || '';
+            if (err.response?.status === 503 || msg.includes('busy')) {
+                setError('⚠️ AI abhi busy hai. 5 seconds baad retry karo.');
+            } else {
+                setError('Subtopics load nahi hue. Please try again.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
+    // Step 2: Toggle subtopic selection (multi-select)
+    const handleSubtopicClick = (subtopic) => {
+        setSelectedSubtopics(prev => {
+            const isSelected = prev.some(s => s.title === subtopic.title);
+            const updated = isSelected
+                ? prev.filter(s => s.title !== subtopic.title)
+                : [...prev, subtopic];
+            setAllSelected(updated.length === subtopics.length);
+            return updated;
+        });
+    };
+
+    // Select All / Deselect All
+    const handleSelectAll = () => {
+        if (allSelected) {
+            setSelectedSubtopics([]);
+            setAllSelected(false);
+        } else {
+            setSelectedSubtopics([...subtopics]);
+            setAllSelected(true);
+        }
+    };
+
+    // Continue from explore to roadmap-choice
+    const handleExploreContinue = () => {
+        if (selectedSubtopics.length === 0) return;
+        // Use first selected as the primary subtopic for the roadmap
+        setSelectedSubtopic(selectedSubtopics[0]);
+        setAppStage('roadmap-choice');
+    };
+
+    // Step 3: Roadmap type chosen → fetch roadmap
+    const handleRoadmapFetch = async (type) => {
+        setRoadmapType(type);
+        setIsLoading(true);
+        setError(null);
+        const token = localStorage.getItem('ai-tutor-token');
+        const subtopicTitle = selectedSubtopics.length > 1
+            ? selectedSubtopics.map(s => s.title).join(', ')
+            : (selectedSubtopic?.title || selectedSubtopics[0]?.title);
+        try {
+            const res = await axios.post(`${BASE_URL}/api/roadmap`, {
+                topic,
+                subtopic: subtopicTitle,
+                roadmapType: type,
+                language
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const rd = res.data;
+            if (!rd.steps || rd.steps.length === 0) {
+                setError('Roadmap generate nahi hua. Dobara try karo.');
+                return;
+            }
+            setRoadmapData(rd);
+            setAppStage('roadmap');
+        } catch (err) {
+            const msg = err.response?.data?.error || '';
+            if (err.response?.status === 503 || msg.includes('busy')) {
+                setError('⚠️ AI abhi busy hai. 5 seconds baad retry karo.');
+            } else {
+                setError('Roadmap load nahi hua. Please try again.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Step 4: Start Learning from roadmap
+    const startTutor = async () => {
+        const subtopicTitle = selectedSubtopics.length > 1
+            ? selectedSubtopics.map(s => s.title).join(' + ')
+            : (selectedSubtopic?.title || selectedSubtopics[0]?.title || '');
+        const learningTopic = subtopicTitle ? `${topic} - ${subtopicTitle}` : topic;
         setIsStarted(true);
         setIsLoading(true);
-        setConversationSummary(''); 
-        
+        setConversationSummary('');
+        setAppStage('learning');
+
         const token = localStorage.getItem('ai-tutor-token');
+        const roadmapContext = roadmapData
+            ? `The student has chosen a ${roadmapType} roadmap with ${roadmapData.steps?.length} steps: ${roadmapData.steps?.map(s => s.title).join(', ')}. Start teaching from step 1: "${roadmapData.steps?.[0]?.title}".`
+            : '';
 
         try {
             const res = await axios.post(API_URL, {
-                message: topic,
+                message: `${roadmapContext} I want to learn: ${learningTopic}`,
                 mode: mode,
                 language: language,
                 history: []
@@ -199,15 +317,16 @@ function App() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            const initialUserMsg = { role: 'user', content: `Teach me about: ${topic}` };
+            const initialUserMsg = { role: 'user', content: `Teach me about: ${learningTopic}` };
             const initialModelMsg = { role: 'model', content: res.data.message, parsed: res.data.parsed };
             const initialHistory = [initialUserMsg, initialModelMsg];
 
             setMessages(initialHistory);
+            setTopic(learningTopic);
 
             const newSession = {
                 id: Date.now().toString(),
-                topic: topic,
+                topic: learningTopic,
                 mode: mode,
                 language: language,
                 messages: initialHistory,
@@ -216,7 +335,7 @@ function App() {
             };
             syncSession(newSession);
         } catch (err) {
-            setMessages([{ role: 'model', content: "❌ Error connecting to the tutor. Make sure the backend is running and the API key is configured." }]);
+            setMessages([{ role: 'model', content: '❌ Error connecting to the tutor. Please try again.' }]);
         } finally {
             setIsLoading(false);
         }
@@ -370,6 +489,13 @@ function App() {
         setStreak(0);
         setProgress({ step: 0, total_steps: 0, current_concept: '' });
         setMcqState({});
+        // Reset explore flow
+        setAppStage('home');
+        setSubtopics([]);
+        setSelectedSubtopics([]);
+        setSelectedSubtopic(null);
+        setRoadmapData(null);
+        setAllSelected(false);
     };
 
     const handleLogout = () => {
@@ -385,15 +511,21 @@ function App() {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
+        // Validate confirm password on register
+        if (authMode === 'register' && authForm.password !== authForm.confirmPassword) {
+            setError('Passwords do not match. Please try again.');
+            setIsLoading(false);
+            return;
+        }
         try {
             const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
             const res = await axios.post(`${BASE_URL}${endpoint}`, authForm);
-            
+
             localStorage.setItem('ai-tutor-token', res.data.token);
             setIsAuthenticated(true);
             setUserEmail(res.data.email);
             setIsApiKeySet(res.data.hasKey);
-            
+
             if (res.data.hasKey) {
                 const sessionRes = await axios.get(`${BASE_URL}/api/sessions`, {
                     headers: { Authorization: `Bearer ${res.data.token}` }
@@ -428,7 +560,7 @@ function App() {
 
     const handleMcqSubmit = (msgIndex, optionIndex, correctIndex) => {
         if (mcqState[msgIndex]?.submitted) return;
-        
+
         const isCorrect = optionIndex === correctIndex;
         setMcqState(prev => ({
             ...prev,
@@ -445,22 +577,56 @@ function App() {
 
     // JSON and Markdown Renderer
     const renderContent = (msg, msgIndex) => {
-        // If it's a raw string or missing parsed property, use classic rendering
-        if (!msg.parsed) {
-            const content = typeof msg === 'string' ? msg : msg.content;
-            return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                code({ node, inline, className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '');
-                    if (!inline && match && match[1] === 'mermaid') {
-                        return <Mermaid chart={String(children).replace(/\n$/, '')} />;
+        // Try to use parsed, or auto-parse from raw content
+        let parsedData = msg.parsed || null;
+        const rawContent = typeof msg === 'string' ? msg : msg.content;
+
+        if (!parsedData && rawContent) {
+            // Try to extract and parse JSON from raw content
+            try {
+                const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const candidate = JSON.parse(jsonMatch[0]);
+                    // Only use if it has tutor fields
+                    if (candidate.explanation || candidate.redirect || candidate.analogy) {
+                        parsedData = candidate;
                     }
-                    return <code className={className} {...props}>{children}</code>;
                 }
-            }}>{content}</ReactMarkdown>;
+            } catch { /* not JSON, render as markdown */ }
         }
 
-        const p = msg.parsed;
-        
+        if (!parsedData) {
+            // Show as markdown but also offer a retry button
+            const looksLikeRawJSON = rawContent && rawContent.trim().startsWith('{');
+            return (
+                <div>
+                    {looksLikeRawJSON ? (
+                        <div className="raw-json-warning">
+                            <span>⚠️ Response formatting issue</span>
+                            <button
+                                className="retry-explain-btn"
+                                onClick={() => sendMessage(null, lastPrompt || 'Please explain again more simply')}
+                                disabled={isLoading}
+                            >
+                                🔄 Samajh Nahi Aaya? Retry
+                            </button>
+                        </div>
+                    ) : null}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                        code({ node, inline, className, children, ...props }) {
+                            const match = /language-(\w+)/.exec(className || '');
+                            if (!inline && match && match[1] === 'mermaid') {
+                                return <Mermaid chart={String(children).replace(/\n$/, '')} />;
+                            }
+                            return <code className={className} {...props}>{children}</code>;
+                        }
+                    }}>{rawContent}</ReactMarkdown>
+                </div>
+            );
+        }
+
+        const p = parsedData;
+
         // Handle redirect Off-Topic Guard
         if (p.redirect) {
             return (
@@ -510,31 +676,21 @@ function App() {
                     </div>
                 )}
 
-                {/* 4. Task */}
-                {p.task && (
-                    <div className="tutor-card task-card">
-                        <div className="card-header">
-                            <CheckSquare size={16} className="card-icon" /> Your Task
-                        </div>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.task}</ReactMarkdown>
-                    </div>
-                )}
-
-                {/* 5. Mastery Check (MCQ) */}
+                {/* 4. Quick Check (MCQ) — shown before Task */}
                 {p.mastery_check && p.mastery_check.options && (
                     <div className="tutor-card mcq-card">
                         <div className="card-header">
                             <span>🎯</span> Quick Check
                         </div>
                         <p className="mcq-question">{p.mastery_check.question}</p>
-                        
+
                         <div className="mcq-options">
                             {p.mastery_check.options.map((opt, optIdx) => {
                                 const mcq = mcqState[msgIndex];
                                 const isSelected = mcq?.selected === optIdx;
                                 const isSubmitted = mcq?.submitted;
                                 const isCorrectOpt = optIdx === p.mastery_check.correct_index;
-                                
+
                                 let btnClass = 'mcq-option-btn';
                                 if (isSubmitted) {
                                     if (isCorrectOpt) btnClass += ' correct';
@@ -545,7 +701,7 @@ function App() {
                                 }
 
                                 return (
-                                    <button 
+                                    <button
                                         key={optIdx}
                                         className={btnClass}
                                         disabled={isSubmitted}
@@ -556,16 +712,38 @@ function App() {
                                 );
                             })}
                         </div>
-                        
+
                         {mcqState[msgIndex]?.submitted && (
                             <div className={`mcq-feedback ${mcqState[msgIndex].isCorrect ? 'positive' : 'negative'}`}>
-                                {mcqState[msgIndex].isCorrect 
-                                    ? `✨ Correct! +20 XP` 
+                                {mcqState[msgIndex].isCorrect
+                                    ? `✨ Correct! +20 XP`
                                     : `❌ Oops! The correct answer was: ${p.mastery_check.options[p.mastery_check.correct_index]}`}
                             </div>
                         )}
                     </div>
                 )}
+
+                {/* 5. Your Task — shown after Quick Check */}
+                {p.task && (
+                    <div className="tutor-card task-card">
+                        <div className="card-header">
+                            <CheckSquare size={16} className="card-icon" /> Your Task
+                        </div>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.task}</ReactMarkdown>
+                    </div>
+                )}
+
+                {/* 6. Universal Retry Button */}
+                <div className="msg-retry-row">
+                    <button
+                        className="retry-explain-btn"
+                        onClick={() => sendMessage(null, 'Yeh mujhe samajh nahi aaya. Please isse aur simple aur short tarike se explain karo')}
+                        disabled={isLoading}
+                        title="Ask AI to explain more simply"
+                    >
+                        🔄 Samajh Nahi Aaya? Retry
+                    </button>
+                </div>
             </div>
         );
     };
@@ -582,37 +760,64 @@ function App() {
                 <form onSubmit={handleAuthSubmit} className="setup-card glass-card">
                     <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
                     {error && <div className="error-banner">{error}</div>}
-                    
+
                     <div className="input-group">
                         <label>Email</label>
                         <input
                             type="email"
                             placeholder="you@example.com"
                             value={authForm.email}
-                            onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
+                            onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
                             required
                         />
                     </div>
                     <div className="input-group">
                         <label>Password</label>
-                        <input
-                            type="password"
-                            placeholder="••••••••"
-                            value={authForm.password}
-                            onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
-                            required
-                        />
+                        <div className="input-eye-wrap">
+                            <input
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="••••••••"
+                                value={authForm.password}
+                                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                                required
+                            />
+                            <button type="button" className="eye-toggle" onClick={() => setShowPassword(p => !p)} tabIndex={-1}>
+                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                        </div>
                     </div>
+
+                    {/* Confirm Password — only on Register */}
+                    {authMode === 'register' && (
+                        <div className="input-group">
+                            <label>Confirm Password</label>
+                            <div className="input-eye-wrap">
+                                <input
+                                    type={showConfirm ? 'text' : 'password'}
+                                    placeholder="••••••••"
+                                    value={authForm.confirmPassword}
+                                    onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                                    required
+                                />
+                                <button type="button" className="eye-toggle" onClick={() => setShowConfirm(p => !p)} tabIndex={-1}>
+                                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     <button type="submit" className="start-btn" disabled={isLoading}>
                         {isLoading ? <Loader2 className="animate-spin" size={20} /> : authMode === 'login' ? 'Login' : 'Sign Up'}
                     </button>
-                    
+
                     <p className="auth-toggle-text">
                         {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
                         <button type="button" className="text-btn" onClick={() => {
                             setAuthMode(authMode === 'login' ? 'register' : 'login');
                             setError(null);
+                            setAuthForm({ email: '', password: '', confirmPassword: '' });
+                            setShowPassword(false);
+                            setShowConfirm(false);
                         }}>
                             {authMode === 'login' ? 'Sign up here' : 'Login here'}
                         </button>
@@ -631,10 +836,10 @@ function App() {
                             <User size={20} />
                         </div>
                     </div>
-                    
+
                     <AnimatePresence>
                         {showProfile && (
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
@@ -668,23 +873,42 @@ function App() {
                     <p>Log in to access your personalized learning roadmaps.</p>
                 </header>
 
-                { (!isApiKeySet || showSettings) ? (
+                {(!isApiKeySet || showSettings) ? (
                     <form onSubmit={handleSaveApiKey} className="setup-card glass-card warning-border">
                         <h3>🔑 Setup Gemini API Key</h3>
-                        <p className="help-text">
-                            To use the AI Tutor, you need a free Gemini API key. 
-                            Your key is encrypted and stored securely in our database.
-                        </p>
+                        <div className="api-key-guide">
+                            <p className="guide-title">📋 How to get your Google API Key?</p>
+                            <ol className="guide-steps">
+                                <li>Click the link below 👇</li>
+                                <li>Sign in with your <strong>Google account</strong></li>
+                                <li>Click <strong>"Create API Key"</strong> button</li>
+                                <li>Copy the key and paste it below</li>
+                            </ol>
+                            <a
+                                href="https://aistudio.google.com/app/apikey"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="api-key-link"
+                            >
+                                🔗 Google AI Studio — Get Free API Key
+                            </a>
+                            <p className="guide-note">✅ Completely Free &nbsp;•&nbsp; 🔒 Your key is encrypted &amp; stored securely</p>
+                        </div>
                         {error && <div className="error-banner">{error}</div>}
                         <div className="input-group">
                             <label>Gemini API Key</label>
-                            <input
-                                type="password"
-                                placeholder="AIzaSy..."
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                required
-                            />
+                            <div className="input-eye-wrap">
+                                <input
+                                    type={showKey ? 'text' : 'password'}
+                                    placeholder="AIzaSy..."
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    required
+                                />
+                                <button type="button" className="eye-toggle" onClick={() => setShowKey(p => !p)} tabIndex={-1}>
+                                    {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
                         </div>
                         <div className="row">
                             <button type="submit" className="start-btn flex-1" disabled={isLoading}>
@@ -697,8 +921,149 @@ function App() {
                             )}
                         </div>
                     </form>
+                ) : appStage === 'explore' ? (
+                    /* ── STAGE 2: Subtopic Multi-Select ── */
+                    <div className="explore-stage glass-card">
+                        <div className="explore-header">
+                            <button className="back-btn" onClick={() => { setAppStage('home'); setSubtopics([]); setSelectedSubtopics([]); setAllSelected(false); }}>
+                                <ArrowLeft size={18} />
+                            </button>
+                            <div style={{ flex: 1 }}>
+                                <h3>🗺️ What do you want to learn in <em>{topic}</em>?</h3>
+                                <p className="explore-sub">Select one or more subtopics → then click Continue</p>
+                            </div>
+                            <button
+                                className={`select-all-btn ${allSelected ? 'deselect' : ''}`}
+                                onClick={handleSelectAll}
+                            >
+                                {allSelected ? '✖ Deselect All' : '✔ Select All'}
+                            </button>
+                        </div>
+                        <div className="subtopics-grid">
+                            {subtopics.map((s, i) => {
+                                const isSelected = selectedSubtopics.some(x => x.title === s.title);
+                                return (
+                                    <motion.button
+                                        key={i}
+                                        className={`subtopic-card ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => handleSubtopicClick(s)}
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.07 }}
+                                        whileHover={{ scale: 1.03 }}
+                                        whileTap={{ scale: 0.97 }}
+                                    >
+                                        {isSelected && <span className="check-badge">✔</span>}
+                                        <span className="subtopic-emoji">{s.emoji}</span>
+                                        <h4>{s.title}</h4>
+                                        <p>{s.description}</p>
+                                    </motion.button>
+                                );
+                            })}
+                        </div>
+                        {selectedSubtopics.length > 0 && (
+                            <motion.button
+                                className="explore-continue-btn"
+                                onClick={handleExploreContinue}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                Continue with {selectedSubtopics.length} topic{selectedSubtopics.length > 1 ? 's' : ''} <ChevronRight size={18} />
+                            </motion.button>
+                        )}
+                    </div>
+                ) : appStage === 'roadmap-choice' ? (
+                    /* ── STAGE 3: Full or Short Roadmap ── */
+                    <div className="roadmap-choice-stage glass-card">
+                        <button className="back-btn mb-1" onClick={() => setAppStage('explore')}>
+                            <ArrowLeft size={18} /> Back
+                        </button>
+                        <div className="roadmap-choice-header">
+                            <span className="choice-emoji">{selectedSubtopic?.emoji}</span>
+                            <h3>{selectedSubtopic?.title}</h3>
+                            <p>{selectedSubtopic?.description}</p>
+                        </div>
+                        <p className="roadmap-choice-label">Roadmap kitna detailed chahiye?</p>
+                        <div className="roadmap-type-btns">
+                            <motion.button
+                                className="roadmap-type-btn full"
+                                onClick={() => handleRoadmapFetch('full')}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                disabled={isLoading}
+                            >
+                                <span>📚</span>
+                                <h4>Full Roadmap</h4>
+                                <p>8 steps — Comprehensive coverage</p>
+                            </motion.button>
+                            <motion.button
+                                className="roadmap-type-btn short"
+                                onClick={() => handleRoadmapFetch('short')}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                disabled={isLoading}
+                            >
+                                <span>⚡</span>
+                                <h4>Short Roadmap</h4>
+                                <p>4 steps — Quick & focused</p>
+                            </motion.button>
+                        </div>
+                        {isLoading && <div className="loading-hint"><Loader2 className="animate-spin" size={20} /> Generating your roadmap...</div>}
+                    </div>
+                ) : appStage === 'roadmap' ? (
+                    /* ── STAGE 4: Roadmap Display ── */
+                    <div className="roadmap-display-stage glass-card">
+                        <div className="roadmap-display-header">
+                            <button className="back-btn" onClick={() => setAppStage('roadmap-choice')}>
+                                <ArrowLeft size={18} />
+                            </button>
+                            <div>
+                                <h3>🗺️ Your Learning Roadmap</h3>
+                                <div className="roadmap-meta">
+                                    <span className="meta-badge">⏱️ {roadmapData?.estimated_time}</span>
+                                    <span className="meta-badge">📊 {roadmapData?.difficulty}</span>
+                                    <span className="meta-badge">{roadmapType === 'full' ? '📚 Full' : '⚡ Short'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="roadmap-topic-title">
+                            {selectedSubtopic?.emoji} {topic} → {selectedSubtopic?.title}
+                        </div>
+                        <div className="roadmap-steps-list">
+                            {roadmapData?.steps?.map((step, i) => (
+                                <motion.div
+                                    key={i}
+                                    className="roadmap-step-item"
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.08 }}
+                                >
+                                    <div className="step-number">{step.step}</div>
+                                    <div className="step-content">
+                                        <div className="step-header">
+                                            <span className="step-emoji">{step.emoji}</span>
+                                            <h4>{step.title}</h4>
+                                        </div>
+                                        <p>{step.description}</p>
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                        <motion.button
+                            className="start-learning-btn"
+                            onClick={startTutor}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            disabled={isLoading}
+                        >
+                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Starting...</> : <>🚀 Start Learning from Step 1 <ChevronRight size={20} /></>}
+                        </motion.button>
+                    </div>
                 ) : (
-                    <form onSubmit={startTutor} className="setup-card glass-card">
+                    /* ── STAGE 1: Home / Topic Input ── */
+                    <form onSubmit={handleTopicExplore} className="setup-card glass-card">
                         <div className="input-group">
                             <label>What do you want to learn today?</label>
                             <input
@@ -730,9 +1095,10 @@ function App() {
                             </div>
                         </div>
 
-                        <button type="submit" className="start-btn">
-                            Start Learning <ChevronRight size={20} />
+                        <button type="submit" className="start-btn" disabled={isLoading}>
+                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Exploring...</> : <>Explore Topic <ChevronRight size={20} /></>}
                         </button>
+                        {error && <div className="error-banner">{error}</div>}
                     </form>
                 )}
 
@@ -766,7 +1132,7 @@ function App() {
                         </div>
                     </div>
                 )}
-                
+
                 {isApiKeySet && !showSettings && (
                     <button className="logout-btn" onClick={() => setShowSettings(true)}>
                         Update API Key
@@ -833,8 +1199,8 @@ function App() {
                         <div className="progress-container hide-mobile">
                             <div className="progress-text">Step {progress.step}/{progress.total_steps}</div>
                             <div className="progress-bar-bg">
-                                <div 
-                                    className="progress-bar-fill" 
+                                <div
+                                    className="progress-bar-fill"
                                     style={{ width: `${Math.min(100, (progress.step / progress.total_steps) * 100)}%` }}
                                 ></div>
                             </div>

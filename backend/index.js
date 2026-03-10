@@ -10,6 +10,7 @@ import { Session } from './models/Session.js';
 import { User } from './models/User.js';
 import { encrypt, decrypt } from './utils/crypto.js';
 import { requireAuth } from './middleware/auth.js';
+import { isAdmin } from './middleware/admin.js';
 import jwt from 'jsonwebtoken';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,19 +20,19 @@ dotenv.config();
 
 // Connect to MongoDB
 if (!process.env.MONGODB_URI) {
-  console.error('❌ CRITICAL: MONGODB_URI is not defined in environment variables!');
+    console.error('❌ CRITICAL: MONGODB_URI is not defined in environment variables!');
 } else {
-  console.log('⏳ Attempting to connect to MongoDB...');
+    console.log('⏳ Attempting to connect to MongoDB...');
 }
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ Connected to MongoDB Atlas'))
-  .catch(err => {
-    console.error('❌ MongoDB Connection Error:', err.message);
-    if (err.name === 'MongooseServerSelectionError') {
-      console.error('👉 Tip: Check your IP Whitelist in MongoDB Atlas and ensure 0.0.0.0/0 is added.');
-    }
-  });
+    .then(() => console.log('✅ Connected to MongoDB Atlas'))
+    .catch(err => {
+        console.error('❌ MongoDB Connection Error:', err.message);
+        if (err.name === 'MongooseServerSelectionError') {
+            console.error('👉 Tip: Check your IP Whitelist in MongoDB Atlas and ensure 0.0.0.0/0 is added.');
+        }
+    });
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -68,7 +69,7 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        
+
         const user = await User.findOne({ email });
         if (!user) return res.status(401).json({ error: "Invalid email or password" });
 
@@ -91,7 +92,7 @@ app.post('/api/auth/key', requireAuth, async (req, res) => {
 
         req.user.encryptedApiKey = encrypt(apiKey);
         await req.user.save();
-        
+
         res.json({ success: true, message: "API key saved securely." });
     } catch (err) {
         console.error("Key Save Error:", err);
@@ -210,15 +211,139 @@ RULES:
 
 
 // ==========================================
+// EXPLORE ROUTE — Topic → Subtopic Options
+// ==========================================
+app.post('/api/explore', requireAuth, async (req, res) => {
+    const { topic, language } = req.body;
+    if (!topic) return res.status(400).json({ error: 'Topic is required' });
+    if (!req.user.encryptedApiKey) return res.status(401).json({ error: 'API key missing' });
+
+    const apiKey = decrypt(req.user.encryptedApiKey);
+    try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash',
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.5 }
+        });
+
+        const prompt = `Generate exactly 6 subtopics for the topic: "${topic}".
+Language: ${language || 'English'}.
+Return ONLY this JSON (no explanation):
+{"subtopics":[{"title":"Short Title","description":"One sentence.","emoji":"📌"}, ...]}
+Each title: 2-4 words. Each description: 1 motivating sentence. Use relevant emojis.`;
+
+        // Retry up to 3 times for 503
+        let result;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                result = await model.generateContent(prompt);
+                break;
+            } catch (err) {
+                if ((err.status === 503 || err.message?.includes('503')) && attempt < 3) {
+                    console.log(`⚠️ Explore 503 attempt ${attempt}, retrying in 3s...`);
+                    await wait(3000);
+                } else throw err;
+            }
+        }
+
+        const text = result.response.text().trim();
+        console.log(`📚 Explore raw (${text.length} chars):`, text.substring(0, 200));
+
+        let parsed = { subtopics: [] };
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            const jsonMatch = text.match(/\{[\s\S]*"subtopics"[\s\S]*\}/);
+            if (jsonMatch) {
+                try { parsed = JSON.parse(jsonMatch[0]); } catch { /* keep empty */ }
+            }
+        }
+
+        console.log(`✅ Explore: ${parsed.subtopics?.length} subtopics for "${topic}"`);
+        res.json(parsed);
+    } catch (err) {
+        console.error('Explore Error:', err.message);
+        if (err.status === 503 || err.message?.includes('503')) {
+            res.status(503).json({ error: 'AI is busy right now. Please try again in a few seconds.' });
+        } else {
+            res.status(500).json({ error: 'Failed to generate subtopics' });
+        }
+    }
+});
+
+// ==========================================
+// ROADMAP ROUTE — Subtopic → Learning Steps
+// ==========================================
+app.post('/api/roadmap', requireAuth, async (req, res) => {
+    const { topic, subtopic, roadmapType, language } = req.body;
+    if (!topic || !subtopic) return res.status(400).json({ error: 'Topic and subtopic required' });
+    if (!req.user.encryptedApiKey) return res.status(401).json({ error: 'API key missing' });
+
+    const apiKey = decrypt(req.user.encryptedApiKey);
+    const stepCount = roadmapType === 'short' ? 4 : 8;
+
+    try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash',
+            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.5 }
+        });
+
+        const prompt = `Create a learning roadmap with exactly ${stepCount} steps for: "${subtopic}" (from ${topic}).
+Language: ${language || 'English'}.
+Return ONLY this JSON (no explanation):
+{"steps":[{"step":1,"title":"Short Title","description":"One sentence.","emoji":"🎯"}, ...],"estimated_time":"X hours","difficulty":"Beginner"}
+Each title: 3-5 words. description: 1 sentence. difficulty: Beginner/Intermediate/Advanced.`;
+
+        // Retry up to 3 times for 503
+        let result;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                result = await model.generateContent(prompt);
+                break;
+            } catch (err) {
+                if ((err.status === 503 || err.message?.includes('503')) && attempt < 3) {
+                    console.log(`⚠️ Roadmap 503 attempt ${attempt}, retrying in 3s...`);
+                    await wait(3000);
+                } else throw err;
+            }
+        }
+
+        const text = result.response.text().trim();
+        console.log(`🗺️ Roadmap raw (${text.length} chars):`, text.substring(0, 200));
+
+        let parsed = { steps: [], estimated_time: '', difficulty: '' };
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            const jsonMatch = text.match(/\{[\s\S]*"steps"[\s\S]*\}/);
+            if (jsonMatch) {
+                try { parsed = JSON.parse(jsonMatch[0]); } catch { /* keep empty */ }
+            }
+        }
+
+        console.log(`✅ Roadmap: ${parsed.steps?.length} steps for "${subtopic}"`);
+        res.json(parsed);
+    } catch (err) {
+        console.error('Roadmap Error:', err.message);
+        if (err.status === 503 || err.message?.includes('503')) {
+            res.status(503).json({ error: 'AI is busy right now. Please try again in a few seconds.' });
+        } else {
+            res.status(500).json({ error: 'Failed to generate roadmap' });
+        }
+    }
+});
+
+// ==========================================
 // AI TUTOR ROUTE (Auth-Protected)
 // ==========================================
 app.post('/api/tutor', requireAuth, async (req, res) => {
     const { message, history, mode, language } = req.body;
-    
+
     if (!req.user.encryptedApiKey) {
         return res.status(401).json({ error: "Gemini API Key is missing. Please save it in your settings." });
     }
-    
+
     // Decrypt the AES stored API key
     const apiKey = decrypt(req.user.encryptedApiKey);
 
@@ -285,7 +410,7 @@ app.post('/api/tutor', requireAuth, async (req, res) => {
         // JSON parse karo — fallback with raw text agar parse fail ho
         let parsed = null;
         let cleanText = text.trim();
-        
+
         // Robust extraction: find the first { and the last }
         const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -316,7 +441,7 @@ app.post('/api/summarize', requireAuth, async (req, res) => {
     if (!req.user.encryptedApiKey) {
         return res.status(401).json({ error: "API key is required for summarization." });
     }
-    
+
     const apiKey = decrypt(req.user.encryptedApiKey);
 
     if (!history || history.length < 2) {
@@ -355,6 +480,41 @@ ${conversationText}`;
     } catch (error) {
         console.error("Summary Error:", error);
         res.status(500).json({ error: "Failed to generate summary." });
+    }
+});
+
+// ==========================================
+// ADMIN ROUTES
+// ==========================================
+
+// Get all users
+app.get('/api/admin/users', requireAuth, isAdmin, async (req, res) => {
+    try {
+        const users = await User.find({}, '-password -encryptedApiKey');
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// Delete user
+app.delete('/api/admin/users/:id', requireAuth, isAdmin, async (req, res) => {
+    try {
+        await User.findByIdAndDelete(req.params.id);
+        await Session.deleteMany({ userId: req.params.id });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
+});
+
+// Get all sessions
+app.get('/api/admin/sessions', requireAuth, isAdmin, async (req, res) => {
+    try {
+        const sessions = await Session.find().populate('userId', 'email').sort({ timestamp: -1 });
+        res.json(sessions);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch sessions' });
     }
 });
 
