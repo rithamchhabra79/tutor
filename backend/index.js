@@ -48,17 +48,22 @@ app.use(express.json());
 // Register
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { email, password } = req.body;
-        if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+        const { name, email, phoneNumber, password } = req.body;
+        if (!name || !email || !phoneNumber || !password) {
+            return res.status(400).json({ error: "All fields (name, email, phone, password) are required" });
+        }
 
-        const existingUser = await User.findOne({ email });
-        if (existingUser) return res.status(400).json({ error: "Email is already registered" });
+        const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+        if (existingUser) {
+            const field = existingUser.email === email ? "Email" : "Phone number";
+            return res.status(400).json({ error: `${field} is already registered` });
+        }
 
-        const user = new User({ email, password });
+        const user = new User({ name, email, phoneNumber, password });
         await user.save();
 
         const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '7d' });
-        res.json({ token, email: user.email, hasKey: false });
+        res.json({ token, email: user.email, name: user.name, hasKey: false });
     } catch (err) {
         console.error("Register Error:", err);
         res.status(500).json({ error: "Failed to register user" });
@@ -68,16 +73,23 @@ app.post('/api/auth/register', async (req, res) => {
 // Login
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { identifier, password } = req.body; // identifier can be email or phoneNumber
+        if (!identifier || !password) return res.status(400).json({ error: "Identifier and password required" });
 
-        const user = await User.findOne({ email });
-        if (!user) return res.status(401).json({ error: "Invalid email or password" });
+        const user = await User.findOne({ 
+            $or: [
+                { email: identifier }, 
+                { phoneNumber: identifier }
+            ] 
+        });
+
+        if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
         const isMatch = await user.comparePassword(password);
-        if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
+        if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
 
         const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '7d' });
-        res.json({ token, email: user.email, hasKey: !!user.encryptedApiKey });
+        res.json({ token, email: user.email, name: user.name, hasKey: !!user.encryptedApiKey });
     } catch (err) {
         console.error("Login Error:", err);
         res.status(500).json({ error: "Login failed" });
@@ -90,8 +102,7 @@ app.post('/api/auth/key', requireAuth, async (req, res) => {
         const { apiKey } = req.body;
         if (!apiKey) return res.status(400).json({ error: "API Key is required" });
 
-        req.user.encryptedApiKey = encrypt(apiKey);
-        await req.user.save();
+        await User.findByIdAndUpdate(req.user._id, { encryptedApiKey: encrypt(apiKey) });
 
         res.json({ success: true, message: "API key saved securely." });
     } catch (err) {
@@ -103,8 +114,7 @@ app.post('/api/auth/key', requireAuth, async (req, res) => {
 // Remove API Key
 app.delete('/api/auth/key', requireAuth, async (req, res) => {
     try {
-        req.user.encryptedApiKey = null;
-        await req.user.save();
+        await User.findByIdAndUpdate(req.user._id, { encryptedApiKey: null });
         res.json({ success: true, message: "API key removed." });
     } catch (err) {
         console.error("Key Remove Error:", err);
@@ -165,7 +175,7 @@ const getGenerativeModelWithKey = (apiKey) => {
         model: "gemini-2.5-flash",
         generationConfig: {
             responseMimeType: "application/json",
-            maxOutputTokens: 1200,
+            maxOutputTokens: 2048,
             temperature: 0.7,
         },
         systemInstruction: `You are a Smart AI Tutor. ALWAYS respond with a single valid JSON object — no markdown, no text outside JSON.
@@ -173,12 +183,17 @@ const getGenerativeModelWithKey = (apiKey) => {
 ROLES:
 - MANAGER: Build & track a topic roadmap. Know current step and total steps.
 - TUTOR: Teach ONE concept at a time. Use Socratic method — don't directly give answers; ask guiding questions first.
+- **NEVER** include the answer or even a hint to the \`mastery_check\` question within the \`explanation\` or \`analogy\` fields. The student must figure it out.
+
+EXPLANATION STYLE:
+- By DEFAULT: Provide clear, high-quality but CONCISE explanations (~100-150 words). Use bullet points.
+- DEEP DIVE: If the user explicitly asks for "Deep Dive", "Vistaar se", or "Explain in detail", provide a molto-thorough, detailed technical breakdown with multiple examples.
 
 JSON RESPONSE FORMAT (use this EXACT structure every time):
 {
-  "explanation": "Main concept explanation in student's language. Use markdown for formatting. Can include \`\`\`mermaid code blocks for diagrams.",
+  "explanation": "Main concept explanation in student's language. Use markdown for formatting. Can include \`\`\`mermaid code blocks for diagrams. **REMINDER: No MCQ answers here.**",
   "analogy": "One short real-life analogy (1-2 lines max). null if not applicable.",
-  "task": "One practical mini-task or exercise for the student. null if this is an answer to student's question.",
+  "task": "One practical mini-task or exercise for the student. **MANDATORY** for every new concept taught.",
   "hint": "A helpful hint if student seems stuck. null otherwise.",
   "mastery_check": {
     "question": "A short MCQ or yes/no question to verify understanding",
@@ -197,15 +212,21 @@ JSON RESPONSE FORMAT (use this EXACT structure every time):
 
 RULES:
 - Follow LANGUAGE (English/Hindi/Hinglish) and MODE (beginner/practical/deep) from the initial message.
-- STRICT PROGRESSION: If the student replies with generic words like 'okay', 'yes', 'thik hai', 'hmm', DO NOT move to the next concept. You MUST require them to answer the previous question, attempt the task, or explicitly say "I don't know, please explain" before teaching the next concept. If they give a generic reply, ask them to answer the question first.
+- PROGRESSION & SOCRATIC METHOD: 
+  - Be encouraging. 
+  - **MANDATORY INTERACTION**: For every new concept, you must provide a 'task' AND a 'mastery_check' (MCQ).
+  - You must wait for the student to attempt BOTH the task and the MCQ. 
+  - In the next response, acknowledge their task attempt and MCQ result before moving to the next concept.
+  - If the student provides a reasonable answer or a meaningful attempt, acknowledge it and move forward.
+  - ONLY stay on the same concept if the reply is truly generic (e.g., "ok", "yes", "thik hai", "hmm") without any attempt to answer.
+  - If they explicitly say "I don't know" or "Samajh nahi aaya", explain it simply and then move to the next concept.
 - If student is OFF-TOPIC (asks about unrelated subject), set redirect field:
   "redirect": "🛑 Pehle [CURRENT_TOPIC] complete karo! [COMPLETED] concepts ho gaye. [NEXT] baaki hai. [NEW_TOPIC] baad mein seekhenge 💪"
   AND set explanation/task/mastery_check to null.
 - Socratic Rule: If student asks something they SHOULD figure out — give a hint in 'hint' field, ask in mastery_check, don't directly explain in 'explanation'.
 - mastery_check MUST always be present (never null) when teaching a new concept.
 - xp_reward: 10 for explanation, 5 for hints, 0 for off-topic.
-- END OF ROADMAP: Once step == total_steps and the final concept is explained/mastered, you MUST conclude the topic. Congratulate the student, provide a brief wrap-up in 'explanation', set 'task' to a suggested next topic, and set 'mastery_check' to null or a final "Are you ready to learn something new?" question. Do not keep asking questions on the same topic loop.
-- Keep explanation concise (max 150 words). Use bullet points.`,
+- END OF ROADMAP: Once step == total_steps and the final concept is explained/mastered, you MUST conclude the topic. Congratulate the student, provide a brief wrap-up in 'explanation', set 'task' to a suggested next topic, and set 'mastery_check' to null or a final "Are you ready to learn something new?" question. Do not keep asking questions on the same topic loop.`,
     });
 };
 
@@ -263,10 +284,12 @@ Each title: 2-4 words. Each description: 1 motivating sentence. Use relevant emo
         res.json(parsed);
     } catch (err) {
         console.error('Explore Error:', err.message);
-        if (err.status === 503 || err.message?.includes('503')) {
+        if (err.status === 429 || err.message?.includes('429')) {
+            res.status(429).json({ error: 'Rate limit reach ho rhi h wait a few min' });
+        } else if (err.status === 503 || err.message?.includes('503')) {
             res.status(503).json({ error: 'AI is busy right now. Please try again in a few seconds.' });
         } else {
-            res.status(500).json({ error: 'Failed to generate subtopics' });
+            res.status(500).json({ error: err.message || 'Something went wrong' });
         }
     }
 });
@@ -280,20 +303,51 @@ app.post('/api/roadmap', requireAuth, async (req, res) => {
     if (!req.user.encryptedApiKey) return res.status(401).json({ error: 'API key missing' });
 
     const apiKey = decrypt(req.user.encryptedApiKey);
-    const stepCount = roadmapType === 'short' ? 4 : 8;
+    
+    // Determine step count and token limit based on type
+    let stepCount = 10;
+    let maxTokens = 4096;
+
+    if (roadmapType === 'short') {
+        stepCount = 10;
+        maxTokens = 4096;
+    } else if (roadmapType === 'full') {
+        stepCount = 20;
+        maxTokens = 8192;
+    } else if (roadmapType === 'master') {
+        stepCount = 50;
+        maxTokens = 12000;
+    } else if (roadmapType === 'advance') {
+        stepCount = 80;
+        maxTokens = 16384;
+    }
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2048, temperature: 0.5 }
+            generationConfig: { 
+                responseMimeType: 'application/json', 
+                maxOutputTokens: maxTokens, 
+                temperature: 0.7 
+            }
         });
 
         const prompt = `Create a learning roadmap with exactly ${stepCount} steps for: "${subtopic}" (from ${topic}).
 Language: ${language || 'English'}.
-Return ONLY this JSON (no explanation):
-{"steps":[{"step":1,"title":"Short Title","description":"One sentence.","emoji":"🎯"}, ...],"estimated_time":"X hours","difficulty":"Beginner"}
-Each title: 3-5 words. description: 1 sentence. difficulty: Beginner/Intermediate/Advanced.`;
+Return ONLY valid JSON. It is CRITICAL that the JSON is complete and not truncated. 
+Use VERY CONCISE descriptions (max 10 words) to ensure all ${stepCount} steps fit within the response limit.
+
+JSON Structure:
+{
+  "steps": [
+    {"step": 1, "title": "Short Title", "description": "Concise info.", "emoji": "🎯"},
+    ...
+  ],
+  "estimated_time": "X hours",
+  "difficulty": "Beginner/Intermediate/Advanced"
+}
+Each title: 2-4 words. Description: Max 10 words.`;
 
         // Retry up to 3 times for 503
         let result;
@@ -310,16 +364,54 @@ Each title: 3-5 words. description: 1 sentence. difficulty: Beginner/Intermediat
         }
 
         const text = result.response.text().trim();
-        console.log(`🗺️ Roadmap raw (${text.length} chars):`, text.substring(0, 200));
+        console.log(`🗺️ Roadmap raw (${text.length} chars):`, text.substring(0, 100) + "...");
 
         let parsed = { steps: [], estimated_time: '', difficulty: '' };
+        
+        // Clean markdown blocks and leading/trailing junk
+        let cleanText = text.trim();
+        if (cleanText.includes('```')) {
+            const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (match) cleanText = match[1].trim();
+        }
+
         try {
-            parsed = JSON.parse(text);
-        } catch {
-            const jsonMatch = text.match(/\{[\s\S]*"steps"[\s\S]*\}/);
+            parsed = JSON.parse(cleanText);
+        } catch (jsonErr) {
+            console.warn("⚠️ Initial JSON parse failed, attempting heuristic recovery...");
+            // Brute force regex extraction for anything between first { and last }
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-                try { parsed = JSON.parse(jsonMatch[0]); } catch { /* keep empty */ }
+                try {
+                    parsed = JSON.parse(jsonMatch[0]);
+                } catch (innerErr) {
+                    console.error("❌ JSON parsing failed even after match extraction:", innerErr.message);
+                    
+                    // If it's still failing, it might be truncated at the end. 
+                    // Let's try to close the JSON if it looks like a steps array that ended abruptly
+                    if (cleanText.includes('"steps": [') && !cleanText.endsWith(']}')) {
+                        console.log("🛠️ Attempting truncation recovery...");
+                        let partial = cleanText;
+                        // Find the last complete step object
+                        const lastStepEnd = partial.lastIndexOf('}');
+                        if (lastStepEnd !== -1) {
+                            partial = partial.substring(0, lastStepEnd + 1) + ']}';
+                            try {
+                                parsed = JSON.parse(partial);
+                                console.log("✅ Recovered partial JSON with", parsed.steps?.length, "steps");
+                            } catch (e) { /* give up */ }
+                        }
+                    }
+                }
             }
+        }
+
+        // Normalize 'Steps' vs 'steps' key
+        if (!parsed.steps && parsed.Steps) parsed.steps = parsed.Steps;
+        
+        // Final fallback validation
+        if (!parsed.steps || !Array.isArray(parsed.steps)) {
+            parsed.steps = [];
         }
 
         console.log(`✅ Roadmap: ${parsed.steps?.length} steps for "${subtopic}"`);
@@ -328,6 +420,8 @@ Each title: 3-5 words. description: 1 sentence. difficulty: Beginner/Intermediat
         console.error('Roadmap Error:', err.message);
         if (err.status === 503 || err.message?.includes('503')) {
             res.status(503).json({ error: 'AI is busy right now. Please try again in a few seconds.' });
+        } else if (err.status === 429 || err.message?.includes('429')) {
+            res.status(429).json({ error: 'Rate limit reach ho rhi h wait a few min' });
         } else {
             res.status(500).json({ error: 'Failed to generate roadmap' });
         }
@@ -428,7 +522,13 @@ app.post('/api/tutor', requireAuth, async (req, res) => {
         res.json({ message: cleanText || text, parsed });
     } catch (error) {
         console.error("Gemini Error:", error);
-        res.status(500).json({ error: "Failed to get response from AI Tutor." });
+        if (error.status === 429 || error.message?.includes('429')) {
+            res.status(429).json({ error: 'Rate limit reach ho rhi h wait a few min' });
+        } else if (error.status === 503 || error.message?.includes('503')) {
+            res.status(503).json({ error: 'AI is busy right now. Please try again in a few seconds.' });
+        } else {
+            res.status(500).json({ error: "Failed to get response from AI Tutor." });
+        }
     }
 });
 
@@ -467,6 +567,7 @@ STUDENT_LEVEL: [one line - what student understood well and what they struggled 
 LAST_TAUGHT: [the very last concept that was being explained]
 NEXT_UP: [the next concept that should be taught next, based on the roadmap]
 ROADMAP_PROGRESS: [e.g. "3 of 7 concepts done"]
+PENDING_ACTION: [If there is an unanswered MCQ or a pending task from the Tutor, describe it briefly here. Otherwise write "None"]
 
 Tutoring conversation to summarize:
 ${conversationText}`;
@@ -479,7 +580,11 @@ ${conversationText}`;
         res.json({ summary });
     } catch (error) {
         console.error("Summary Error:", error);
-        res.status(500).json({ error: "Failed to generate summary." });
+        if (error.status === 429 || error.message?.includes('429')) {
+            res.status(429).json({ error: 'Rate limit reach ho rhi h wait a few min' });
+        } else {
+            res.status(500).json({ error: "Failed to generate summary." });
+        }
     }
 });
 
@@ -511,7 +616,7 @@ app.delete('/api/admin/users/:id', requireAuth, isAdmin, async (req, res) => {
 // Get all sessions
 app.get('/api/admin/sessions', requireAuth, isAdmin, async (req, res) => {
     try {
-        const sessions = await Session.find().populate('userId', 'email').sort({ timestamp: -1 });
+        const sessions = await Session.find().populate('userId', 'email name phoneNumber').sort({ timestamp: -1 });
         res.json(sessions);
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch sessions' });

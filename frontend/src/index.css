@@ -8,6 +8,9 @@
   --accent: #10b981;
   --glass: rgba(30, 41, 59, 0.7);
   --border: rgba(255, 255, 255, 0.1);
+  --primary-light: #818cf8;
+  --primary-glow: rgba(99, 102, 241, 0.3);
+  --primary-glow-thick: rgba(99, 102, 241, 0.5);
 }
 
 * {

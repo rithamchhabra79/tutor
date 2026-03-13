@@ -35,7 +35,9 @@ const UsersList = () => {
     };
 
     const filteredUsers = users.filter(u => 
-        u.email.toLowerCase().includes(search.toLowerCase())
+        (u.email || '').toLowerCase().includes(search.toLowerCase()) ||
+        (u.name || '').toLowerCase().includes(search.toLowerCase()) ||
+        (u.phoneNumber || '').toLowerCase().includes(search.toLowerCase())
     );
 
     return (
@@ -49,7 +51,7 @@ const UsersList = () => {
                     <Search size={18} />
                     <input 
                         type="text" 
-                        placeholder="Search by email..."
+                        placeholder="Search by name, email or phone..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="input-control"
@@ -62,6 +64,7 @@ const UsersList = () => {
                     <thead>
                         <tr>
                             <th>User Info</th>
+                            <th>Phone</th>
                             <th>Role</th>
                             <th>Joined</th>
                             <th>API Config</th>
@@ -72,11 +75,11 @@ const UsersList = () => {
                         <AnimatePresence>
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Loading users list...</td>
+                                    <td colSpan="6" style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>Loading users list...</td>
                                 </tr>
                             ) : filteredUsers.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>No users matching your search</td>
+                                    <td colSpan="6" style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>No users matching your search</td>
                                 </tr>
                             ) : filteredUsers.map((user) => (
                                 <motion.tr 
@@ -88,10 +91,16 @@ const UsersList = () => {
                                     <td>
                                         <div className="flex-center gap-3" style={{ justifyContent: 'flex-start' }}>
                                             <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '0.75rem', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700' }}>
-                                                {user.email[0].toUpperCase()}
+                                                {(user.name ? user.name[0] : user.email[0]).toUpperCase()}
                                             </div>
-                                            <span style={{ fontWeight: '600' }}>{user.email}</span>
+                                            <div className="flex-col" style={{ alignItems: 'flex-start' }}>
+                                                <span style={{ fontWeight: '600' }}>{user.name || 'No Name'}</span>
+                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{user.email}</span>
+                                            </div>
                                         </div>
+                                    </td>
+                                    <td>
+                                        <span style={{ fontSize: '0.85rem' }}>{user.phoneNumber || '-'}</span>
                                     </td>
                                     <td>
                                         <span className={`badge ${user.role === 'admin' ? 'badge-primary' : 'badge-secondary'}`}>

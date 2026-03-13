@@ -55,6 +55,36 @@ const Mermaid = ({ chart }) => {
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API_URL = `${BASE_URL}/api/tutor`;
 
+const UI_MESSAGES = {
+    English: {
+        quota: "🚫 Daily AI Quota reached. Please try again tomorrow or check your API Key.",
+        busy: "⚠️ AI is busy. Please retry in 5 seconds.",
+        generic_error: "Fail to load. Please try again.",
+        mcq_missing: "Please select an MCQ answer first!",
+        task_missing: "Please write your Task answer first!",
+        roadmap_error: "Roadmap not generated. Try again.",
+        subtopic_error: "AI failed to generate subtopics. Try again."
+    },
+    Hindi: {
+        quota: "🚫 दैनिक AI कोटा समाप्त हो गया है। कृपया कल पुनः प्रयास करें या अपनी API Key जांचें।",
+        busy: "⚠️ AI व्यस्त है। कृपया 5 सेकंड में पुनः प्रयास करें।",
+        generic_error: "लोड करने में विफल। कृपया पुन: प्रयास करें।",
+        mcq_missing: "कृपया पहले MCQ उत्तर चुनें!",
+        task_missing: "कृपया पहले अपना टास्क उत्तर लिखें!",
+        roadmap_error: "रोडमैप जनरेट नहीं हुआ। फिर से प्रयास करें।",
+        subtopic_error: "AI सबटॉपिक जनरेट नहीं कर पाया। फिर से प्रयास करें।"
+    },
+    Hinglish: {
+        quota: "🚫 Daily AI Quota reach ho gaya hai. Kal try karein ya apni API Key check karein.",
+        busy: "⚠️ AI abhi busy hai. 5 seconds baad retry karo.",
+        generic_error: "Load nahi ho paya. Please try again.",
+        mcq_missing: "Pehle MCQ ka answer select karo!",
+        task_missing: "Pehle Task ka answer likho!",
+        roadmap_error: "Roadmap generate nahi hua. Dobara try karo.",
+        subtopic_error: "AI ne subtopics generate nahi kiye. Dobara try karo."
+    }
+};
+
 function App() {
     const [topic, setTopic] = useState('');
     const [mode, setMode] = useState('beginner');
@@ -65,7 +95,7 @@ function App() {
     const [userEmail, setUserEmail] = useState('');
     const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
     const [showProfile, setShowProfile] = useState(false);
-    const [authForm, setAuthForm] = useState({ email: '', password: '', confirmPassword: '' });
+    const [authForm, setAuthForm] = useState({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
 
     // API Key States
     const [apiKey, setApiKey] = useState('');
@@ -100,6 +130,8 @@ function App() {
     const [showKey, setShowKey] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [showTrackSidebar, setShowTrackSidebar] = useState(false);
+    const [cooldown, setCooldown] = useState(0); // ⏱️ Cooldown timer in seconds
     const chatEndRef = useRef(null);
 
     // Load sessions and check auth status on mount
@@ -192,10 +224,18 @@ function App() {
         scrollToBottom();
     }, [messages]);
 
+    // ⏱️ Cooldown Timer Effect
+    useEffect(() => {
+        if (cooldown > 0) {
+            const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [cooldown]);
+
     // Step 1: Topic submit → fetch subtopics
     const handleTopicExplore = async (e) => {
         e.preventDefault();
-        if (!topic.trim() || !isApiKeySet) return;
+        if (!topic.trim() || !isApiKeySet || isLoading || cooldown > 0) return;
         setIsLoading(true);
         setError(null);
         setSubtopics([]);
@@ -211,12 +251,17 @@ function App() {
             }
             setSubtopics(subs);
             setAppStage('explore');
+            setCooldown(20); // ⏱️ Set 20s cooldown
         } catch (err) {
             const msg = err.response?.data?.error || '';
-            if (err.response?.status === 503 || msg.includes('busy')) {
-                setError('⚠️ AI abhi busy hai. 5 seconds baad retry karo.');
+            const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
+
+            if (err.response?.status === 429 || msg.includes('limit') || msg.includes('quota')) {
+                setError(msgs.quota);
+            } else if (err.response?.status === 503 || msg.includes('busy')) {
+                setError(msgs.busy);
             } else {
-                setError('Subtopics load nahi hue. Please try again.');
+                setError(msgs.subtopic_error);
             }
         } finally {
             setIsLoading(false);
@@ -256,6 +301,7 @@ function App() {
 
     // Step 3: Roadmap type chosen → fetch roadmap
     const handleRoadmapFetch = async (type) => {
+        if (isLoading || cooldown > 0) return;
         setRoadmapType(type);
         setIsLoading(true);
         setError(null);
@@ -279,12 +325,17 @@ function App() {
             }
             setRoadmapData(rd);
             setAppStage('roadmap');
+            setCooldown(20); // ⏱️ Set 20s cooldown
         } catch (err) {
             const msg = err.response?.data?.error || '';
-            if (err.response?.status === 503 || msg.includes('busy')) {
-                setError('⚠️ AI abhi busy hai. 5 seconds baad retry karo.');
+            const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
+
+            if (err.response?.status === 429 || msg.includes('limit') || msg.includes('quota')) {
+                setError(msgs.quota);
+            } else if (err.response?.status === 503 || msg.includes('busy')) {
+                setError(msgs.busy);
             } else {
-                setError('Roadmap load nahi hua. Please try again.');
+                setError(msgs.roadmap_error);
             }
         } finally {
             setIsLoading(false);
@@ -331,6 +382,7 @@ function App() {
                 language: language,
                 messages: initialHistory,
                 summary: '',
+                roadmapData: roadmapData, // 🗺️ Save roadmap for persistence
                 timestamp: Date.now()
             };
             syncSession(newSession);
@@ -344,19 +396,50 @@ function App() {
     const sendMessage = async (e, retryInput = null) => {
         if (e) e.preventDefault();
         const finalInput = retryInput || input;
-        if (!finalInput.trim() || isLoading) return;
+        if (!finalInput.trim() || isLoading || (cooldown > 0 && !retryInput)) return;
 
         setError(null); // Clear previous errors
         setLastPrompt(finalInput); // Save for retry
 
-        // If not a retry, add user message to UI
+        setIsLoading(true);
+
+        // --- MCQ & Task Combined Logic ---
+        let finalMessageToSend = finalInput;
+        const lastMsg = messages[messages.length - 1];
+        
+        // 🧪 ONLY validate if this is NOT an action button retry
+        if (!retryInput && lastMsg?.role === 'model' && lastMsg.parsed?.mastery_check) {
+            const msgIndex = messages.length - 1;
+            const mcq = mcqState[msgIndex];
+            const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
+            
+            if (!mcq?.submitted) {
+                setError(msgs.mcq_missing);
+                setIsLoading(false);
+                return;
+            }
+            
+            if (!finalInput.trim()) {
+                setError(msgs.task_missing);
+                setIsLoading(false);
+                return;
+            }
+
+            const p = lastMsg.parsed;
+            const selectedOptText = p.mastery_check.options[mcq.selected];
+            const isCorrect = mcq.isCorrect;
+            
+            finalMessageToSend = `[STUDENT SUBMISSION]
+MCQ Answer: ${selectedOptText} (${isCorrect ? 'Correct' : 'Incorrect'})
+Task Answer: ${finalInput}`;
+        }
+
+        // Add user message to UI (plain version)
         if (!retryInput) {
             const userMsg = { role: 'user', content: finalInput };
             setMessages(prev => [...prev, userMsg]);
             setInput('');
         }
-
-        setIsLoading(true);
 
         try {
             // ============================================================
@@ -392,7 +475,7 @@ function App() {
 
             const token = localStorage.getItem('ai-tutor-token');
             const res = await axios.post(API_URL, {
-                message: finalInput,
+                message: finalMessageToSend,
                 history: history,
                 mode: mode,
                 language: language
@@ -427,12 +510,23 @@ function App() {
                 language: language,
                 messages: updatedMessages,
                 summary: latestSummary,
+                roadmapData: roadmapData, // 🗺️ Keep roadmap in sync
                 timestamp: Date.now()
             };
             syncSession(updatedSession);
+            setCooldown(20); // ⏱️ Set 20s cooldown (only on success)
 
         } catch (err) {
-            const errorMsg = err.response?.data?.error || "Sorry, I'm feeling a bit busy. Can you try again in a minute?";
+            const msg = err.response?.data?.error || "";
+            const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
+            let errorMsg = msgs.generic_error;
+            
+            if (err.response?.status === 429 || msg.includes('limit') || msg.includes('quota')) {
+                errorMsg = msgs.quota;
+            } else if (msg) {
+                errorMsg = msg;
+            }
+
             setError(errorMsg);
             setMessages(prev => [...prev, { role: 'model', content: `❌ **Opps!** ${errorMsg}`, isError: true }]);
         } finally {
@@ -445,8 +539,10 @@ function App() {
         setMode(session.mode);
         setLanguage(session.language);
         setMessages(session.messages);
-        setConversationSummary(session.summary || ''); // 🧠 Summary memory restore karo
+        setConversationSummary(session.summary || '');
+        setRoadmapData(session.roadmapData || null); // 🗺️ Restore roadmap
         setIsStarted(true);
+        setAppStage('learning'); // Ensure stage is correct
     };
 
     const deleteSession = async (e, id) => {
@@ -511,15 +607,40 @@ function App() {
         e.preventDefault();
         setIsLoading(true);
         setError(null);
-        // Validate confirm password on register
-        if (authMode === 'register' && authForm.password !== authForm.confirmPassword) {
-            setError('Passwords do not match. Please try again.');
-            setIsLoading(false);
-            return;
+        
+        // Validate fields for register
+        if (authMode === 'register') {
+            if (!authForm.name || !authForm.email || !authForm.phoneNumber || !authForm.password) {
+                setError('All fields are required');
+                setIsLoading(false);
+                return;
+            }
+            if (authForm.password !== authForm.confirmPassword) {
+                setError('Passwords do not match');
+                setIsLoading(false);
+                return;
+            }
+        } else {
+            // Validate login
+            if (!authForm.email || !authForm.password) {
+                setError('Identifier and password are required');
+                setIsLoading(false);
+                return;
+            }
         }
+
         try {
             const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
-            const res = await axios.post(`${BASE_URL}${endpoint}`, authForm);
+            const payload = authMode === 'login' 
+                ? { identifier: authForm.email, password: authForm.password }
+                : { 
+                    name: authForm.name, 
+                    email: authForm.email, 
+                    phoneNumber: authForm.phoneNumber, 
+                    password: authForm.password 
+                };
+
+            const res = await axios.post(`${BASE_URL}${endpoint}`, payload);
 
             localStorage.setItem('ai-tutor-token', res.data.token);
             setIsAuthenticated(true);
@@ -558,7 +679,7 @@ function App() {
         }
     };
 
-    const handleMcqSubmit = (msgIndex, optionIndex, correctIndex) => {
+    const handleMcqSubmit = (msgIndex, optionIndex, correctIndex, optionText) => {
         if (mcqState[msgIndex]?.submitted) return;
 
         const isCorrect = optionIndex === correctIndex;
@@ -573,6 +694,10 @@ function App() {
         } else {
             setStreak(0);
         }
+
+        // 🤖 Just update state, don't auto-send anymore
+        const feedback = `[MCQ] I chose "${optionText}". (Result: ${isCorrect ? 'Correct' : 'Incorrect'})`;
+        console.log("MCQ Selection:", feedback);
     };
 
     // JSON and Markdown Renderer
@@ -705,7 +830,7 @@ function App() {
                                         key={optIdx}
                                         className={btnClass}
                                         disabled={isSubmitted}
-                                        onClick={() => handleMcqSubmit(msgIndex, optIdx, p.mastery_check.correct_index)}
+                                        onClick={() => handleMcqSubmit(msgIndex, optIdx, p.mastery_check.correct_index, opt)}
                                     >
                                         {opt}
                                     </button>
@@ -733,15 +858,23 @@ function App() {
                     </div>
                 )}
 
-                {/* 6. Universal Retry Button */}
-                <div className="msg-retry-row">
+                {/* 6. Universal Action Buttons (Deep Dive & Retry) */}
+                <div className="msg-action-row">
+                    <button
+                        className="deep-dive-btn"
+                        onClick={() => sendMessage(null, language === 'English' ? 'Explain this in great detail with more examples.' : 'Iske baare mein bohot vistaar se samjhao (Explain in Detail)')}
+                        disabled={isLoading || cooldown > 0}
+                        title="Get an in-depth explanation"
+                    >
+                        {cooldown > 0 ? `Wait ${cooldown}s` : <>🔬 {language === 'English' ? 'Deep Dive' : 'Explain in Detail'}</>}
+                    </button>
                     <button
                         className="retry-explain-btn"
                         onClick={() => sendMessage(null, 'Yeh mujhe samajh nahi aaya. Please isse aur simple aur short tarike se explain karo')}
-                        disabled={isLoading}
+                        disabled={isLoading || cooldown > 0}
                         title="Ask AI to explain more simply"
                     >
-                        🔄 Samajh Nahi Aaya? Retry
+                        {cooldown > 0 ? `${cooldown}s` : '🔄 Retry'}
                     </button>
                 </div>
             </div>
@@ -761,16 +894,43 @@ function App() {
                     <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
                     {error && <div className="error-banner">{error}</div>}
 
+                    {authMode === 'register' && (
+                        <div className="input-group">
+                            <label>Full Name</label>
+                            <input
+                                type="text"
+                                placeholder="Your name"
+                                value={authForm.name}
+                                onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
+                                required
+                            />
+                        </div>
+                    )}
+
                     <div className="input-group">
-                        <label>Email</label>
+                        <label>{authMode === 'login' ? 'Email or Phone Number' : 'Email'}</label>
                         <input
-                            type="email"
-                            placeholder="you@example.com"
+                            type={authMode === 'login' ? 'text' : 'email'}
+                            placeholder={authMode === 'login' ? 'you@example.com or 9876543210' : 'you@example.com'}
                             value={authForm.email}
                             onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
                             required
                         />
                     </div>
+
+                    {authMode === 'register' && (
+                        <div className="input-group">
+                            <label>Phone Number</label>
+                            <input
+                                type="tel"
+                                placeholder="9876543210"
+                                value={authForm.phoneNumber}
+                                onChange={(e) => setAuthForm({ ...authForm, phoneNumber: e.target.value })}
+                                required
+                            />
+                        </div>
+                    )}
+
                     <div className="input-group">
                         <label>Password</label>
                         <div className="input-eye-wrap">
@@ -815,7 +975,7 @@ function App() {
                         <button type="button" className="text-btn" onClick={() => {
                             setAuthMode(authMode === 'login' ? 'register' : 'login');
                             setError(null);
-                            setAuthForm({ email: '', password: '', confirmPassword: '' });
+                            setAuthForm({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
                             setShowPassword(false);
                             setShowConfirm(false);
                         }}>
@@ -988,29 +1148,52 @@ function App() {
                         <p className="roadmap-choice-label">Roadmap kitna detailed chahiye?</p>
                         <div className="roadmap-type-btns">
                             <motion.button
-                                className="roadmap-type-btn full"
-                                onClick={() => handleRoadmapFetch('full')}
-                                whileHover={{ scale: 1.04 }}
-                                whileTap={{ scale: 0.96 }}
-                                disabled={isLoading}
-                            >
-                                <span>📚</span>
-                                <h4>Full Roadmap</h4>
-                                <p>8 steps — Comprehensive coverage</p>
-                            </motion.button>
-                            <motion.button
                                 className="roadmap-type-btn short"
                                 onClick={() => handleRoadmapFetch('short')}
                                 whileHover={{ scale: 1.04 }}
                                 whileTap={{ scale: 0.96 }}
-                                disabled={isLoading}
+                                disabled={isLoading || cooldown > 0}
                             >
                                 <span>⚡</span>
-                                <h4>Short Roadmap</h4>
-                                <p>4 steps — Quick & focused</p>
+                                <h4>Short</h4>
+                                <p>10 steps — Quick Start</p>
+                            </motion.button>
+                            <motion.button
+                                className="roadmap-type-btn full"
+                                onClick={() => handleRoadmapFetch('full')}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                disabled={isLoading || cooldown > 0}
+                            >
+                                <span>📚</span>
+                                <h4>Full</h4>
+                                <p>20 steps — Deep Dive</p>
+                            </motion.button>
+                            <motion.button
+                                className="roadmap-type-btn master"
+                                onClick={() => handleRoadmapFetch('master')}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                disabled={isLoading || cooldown > 0}
+                            >
+                                <span>🏆</span>
+                                <h4>Master</h4>
+                                <p>50 steps — Pro Track</p>
+                            </motion.button>
+                            <motion.button
+                                className="roadmap-type-btn advance"
+                                onClick={() => handleRoadmapFetch('advance')}
+                                whileHover={{ scale: 1.04 }}
+                                whileTap={{ scale: 0.96 }}
+                                disabled={isLoading || cooldown > 0}
+                            >
+                                <span>🚀</span>
+                                <h4>Advance</h4>
+                                <p>100 steps — Ultimate</p>
                             </motion.button>
                         </div>
                         {isLoading && <div className="loading-hint"><Loader2 className="animate-spin" size={20} /> Generating your roadmap...</div>}
+                        {cooldown > 0 && <div className="loading-hint cooldown">⏳ Please wait {cooldown}s before next request...</div>}
                     </div>
                 ) : appStage === 'roadmap' ? (
                     /* ── STAGE 4: Roadmap Display ── */
@@ -1095,8 +1278,8 @@ function App() {
                             </div>
                         </div>
 
-                        <button type="submit" className="start-btn" disabled={isLoading}>
-                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Exploring...</> : <>Explore Topic <ChevronRight size={20} /></>}
+                        <button type="submit" className="start-btn" disabled={isLoading || cooldown > 0}>
+                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Exploring...</> : cooldown > 0 ? `Wait ${cooldown}s...` : <>Explore Topic <ChevronRight size={20} /></>}
                         </button>
                         {error && <div className="error-banner">{error}</div>}
                     </form>
@@ -1149,26 +1332,31 @@ function App() {
                 <div className="exit-warning-overlay">
                     <div className="exit-warning-modal glass-card">
                         <div className="exit-warning-icon">🛑</div>
-                        <h3>Roadmap Chodna?</h3>
+                        <h3>{language === 'English' ? 'Leave Roadmap?' : 'Roadmap Chodna?'}</h3>
                         <p>
-                            Aap abhi <strong>{topic}</strong> seekh rahe ho!<br />
-                            Is roadmap ko beech mein chhod doge?
+                            {language === 'English' 
+                                ? <>You are currently learning <strong>{topic}</strong>!<br />Are you sure you want to leave this roadmap?</>
+                                : <>Aap abhi <strong>{topic}</strong> seekh rahe ho!<br />Is roadmap ko beech mein chhod doge?</>
+                            }
                         </p>
                         <div className="exit-warning-tip">
-                            💡 <em>Pehle ye complete karo — phir naya topic start karte hain!</em>
+                            {language === 'English'
+                                ? <>💡 <em>Complete this first — then we can start a new topic!</em></>
+                                : <>💡 <em>Pehle ye complete karo — phir naya topic start karte hain!</em></>
+                            }
                         </div>
                         <div className="exit-warning-buttons">
                             <button
                                 className="exit-continue-btn"
                                 onClick={() => setShowExitWarning(false)}
                             >
-                                ✅ Continue Learning
+                                {language === 'English' ? '✅ Continue Learning' : '✅ Continue Learning'}
                             </button>
                             <button
                                 className="exit-leave-btn"
                                 onClick={forceReset}
                             >
-                                🚪 Leave Anyway
+                                {language === 'English' ? '🚪 Leave Anyway' : '🚪 Leave Anyway'}
                             </button>
                         </div>
                     </div>
@@ -1180,13 +1368,23 @@ function App() {
                         <ArrowLeft size={20} />
                     </button>
                     <BookOpen size={24} className="hide-mobile" />
-                    <div>
+                    <div className="header-text-container">
                         <h2>{topic}</h2>
                         <span>{mode.charAt(0).toUpperCase() + mode.slice(1)} • {language}</span>
                     </div>
                 </div>
 
                 <div className="header-stats">
+                    {roadmapData?.steps && (
+                        <button 
+                            className={`sidebar-toggle-btn ${showTrackSidebar ? 'active' : ''}`}
+                            onClick={() => setShowTrackSidebar(!showTrackSidebar)}
+                            title="Toggle Roadmap Track"
+                        >
+                            <History size={18} />
+                            <span className="hide-mobile">Track</span>
+                        </button>
+                    )}
                     <div className="stat-badge xp-badge">
                         <span>⚡ {xp} XP</span>
                     </div>
@@ -1196,8 +1394,11 @@ function App() {
                         </div>
                     )}
                     {progress.total_steps > 0 && (
-                        <div className="progress-container hide-mobile">
-                            <div className="progress-text">Step {progress.step}/{progress.total_steps}</div>
+                        <div className="progress-tracker hide-mobile">
+                            <div className="progress-info">
+                                <span className="progress-label">Progress: <b>Step {progress.step}/{progress.total_steps}</b></span>
+                                <span className="progress-percentage">{Math.round((progress.step / progress.total_steps) * 100)}%</span>
+                            </div>
                             <div className="progress-bar-bg">
                                 <div
                                     className="progress-bar-fill"
@@ -1213,53 +1414,99 @@ function App() {
                 </button>
             </header>
 
-            <div className="messages-list">
-                {messages.map((msg, i) => (
-                    <motion.div
-                        key={i}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`message-wrapper ${msg.role}`}
-                    >
-                        <div className={`message glass-card ${msg.role} ${msg.isError ? 'error-msg' : ''}`}>
-                            {msg.role === 'model' && <GraduationCap size={16} className="tutor-icon" />}
-                            <div className="msg-content markdown-body">
-                                {msg.role === 'model' ? renderContent(msg, i) : renderContent(msg.content, i)}
+            <div style={{ display: 'flex', flex: 1, height: 'calc(100% - 80px)', overflow: 'hidden' }}>
+                <div className="messages-container" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+                    <div className="messages-list" style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+                        {messages.map((msg, i) => (
+                            <motion.div
+                                key={i}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={`message-wrapper ${msg.role}`}
+                            >
+                                <div className={`message glass-card ${msg.role} ${msg.isError ? 'error-msg' : ''}`}>
+                                    {msg.role === 'model' && <GraduationCap size={16} className="tutor-icon" />}
+                                    <div className="msg-content markdown-body">
+                                        {msg.role === 'model' ? renderContent(msg, i) : renderContent(msg.content, i)}
+                                    </div>
+                                    {msg.isError && (
+                                        <button className="retry-msg-btn" onClick={() => sendMessage(null, lastPrompt)}>
+                                            <RefreshCcw size={14} /> Retry Now
+                                        </button>
+                                    )}
+                                </div>
+                            </motion.div>
+                        ))}
+                        {isLoading && (
+                            <div className="message-wrapper model">
+                                <div className="message glass-card model loading">
+                                    <Loader2 className="animate-spin" size={20} />
+                                    <div className="agent-status">
+                                        <span className="status-mgr">AI Manager: Planning...</span>
+                                        <span className="status-tutor">AI Tutor: Preparing...</span>
+                                    </div>
+                                </div>
                             </div>
-                            {msg.isError && (
-                                <button className="retry-msg-btn" onClick={() => sendMessage(null, lastPrompt)}>
-                                    <RefreshCcw size={14} /> Retry Now
-                                </button>
-                            )}
-                        </div>
-                    </motion.div>
-                ))}
-                {isLoading && (
-                    <div className="message-wrapper model">
-                        <div className="message glass-card model loading">
-                            <Loader2 className="animate-spin" size={20} />
-                            <div className="agent-status">
-                                <span className="status-mgr">AI Manager: Planning...</span>
-                                <span className="status-tutor">AI Tutor: Preparing...</span>
-                            </div>
-                        </div>
+                        )}
+                        <div ref={chatEndRef} />
                     </div>
-                )}
-                <div ref={chatEndRef} />
-            </div>
 
-            <form onSubmit={sendMessage} className="input-area glass-card">
-                <input
-                    type="text"
-                    placeholder="Respond to the tutor..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    disabled={isLoading}
-                />
-                <button type="submit" disabled={isLoading || !input.trim()}>
-                    <Send size={20} />
-                </button>
-            </form>
+                    <form onSubmit={sendMessage} className="input-area glass-card">
+                        <input
+                            type="text"
+                            placeholder="Respond to the tutor..."
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            disabled={isLoading}
+                        />
+                        <button type="submit" disabled={isLoading || !input.trim() || cooldown > 0}>
+                            {cooldown > 0 ? <span style={{ fontSize: '0.7rem' }}>{cooldown}s</span> : <Send size={20} />}
+                        </button>
+                    </form>
+                </div>
+
+                {/* 🗺️ Roadmap Progress Sidebar — Desktop Only Toggleable */}
+                <AnimatePresence>
+                    {showTrackSidebar && roadmapData?.steps && (
+                        <motion.aside 
+                            initial={{ x: 320, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: 320, opacity: 0 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="progress-sidebar"
+                        >
+                            <div className="sidebar-header">
+                                <div className="sidebar-title">
+                                    <BookOpen size={20} className="text-primary" />
+                                    <span>Roadmap Track</span>
+                                </div>
+                                <button className="close-sidebar-btn" onClick={() => setShowTrackSidebar(false)}>
+                                    <ArrowLeft size={16} />
+                                </button>
+                            </div>
+                            <div className="track-list">
+                                {roadmapData.steps.map((step, idx) => {
+                                    const stepNum = idx + 1;
+                                    const isCompleted = progress.step > stepNum;
+                                    const isCurrent = progress.step === stepNum;
+
+                                    return (
+                                        <div key={idx} className={`track-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}>
+                                            <div className="track-dot">
+                                                {isCompleted ? '✔' : stepNum}
+                                            </div>
+                                            <div className="track-content">
+                                                <h5>{step.title}</h5>
+                                                <p>{isCurrent ? 'Ongoing...' : isCompleted ? 'Completed' : 'Upcoming'}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </motion.aside>
+                    )}
+                </AnimatePresence>
+            </div>
         </div>
     );
 }
