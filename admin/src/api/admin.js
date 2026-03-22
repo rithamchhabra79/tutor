@@ -15,7 +15,7 @@ adminApi.interceptors.request.use((config) => {
     return config;
 });
 
-export const login = (email, password) => adminApi.post('/auth/login', { email, password });
+export const login = (identifier, password) => adminApi.post('/auth/login', { identifier, password });
 export const getUsers = () => adminApi.get('/admin/users');
 export const deleteUser = (id) => adminApi.delete(`/admin/users/${id}`);
 export const getSessions = () => adminApi.get('/admin/sessions');

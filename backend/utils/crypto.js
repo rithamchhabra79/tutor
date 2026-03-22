@@ -3,8 +3,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Use SHA-256 to hash the environment key into a 32-byte buffer
+if (!process.env.ENCRYPTION_KEY) {
+    throw new Error('❌ CRITICAL: ENCRYPTION_KEY is not defined in environment variables!');
+}
 const ENCRYPTION_KEY = crypto.createHash('sha256')
-    .update(process.env.ENCRYPTION_KEY || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    .update(process.env.ENCRYPTION_KEY)
     .digest(); 
 const IV_LENGTH = 16; 
 

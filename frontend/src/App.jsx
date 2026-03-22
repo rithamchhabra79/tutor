@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key, Eye, EyeOff } from 'lucide-react';
+import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key, Eye, EyeOff, ClipboardList, StickyNote, Download, Sparkles, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
+import DOMPurify from 'isomorphic-dompurify';
 import './App.css';
 
 // Initialize Mermaid
 mermaid.initialize({
-    startOnLoad: true,
+    startOnLoad: false,
     theme: 'base',
     themeVariables: {
         primaryColor: '#6366f1',
@@ -22,20 +23,23 @@ mermaid.initialize({
 });
 
 const Mermaid = ({ chart }) => {
-    const ref = useRef(null);
+    const [svg, setSvg] = useState('');
+    const id = useRef(`mermaid-${Math.floor(Math.random() * 1000000)}`);
 
     useEffect(() => {
-        if (ref.current && chart) {
-            mermaid.contentLoaded();
-            // Force re-render of mermaid
+        if (chart) {
             const renderDiagram = async () => {
                 try {
-                    ref.current.removeAttribute('data-processed');
-                    await mermaid.run({
-                        nodes: [ref.current],
-                    });
+                    // mermaid.render returns an object with { svg } in newer versions
+                    const { svg: svgCode } = await mermaid.render(id.current, chart);
+                    // Sanitize SVG to prevent XSS
+                    const cleanSvg = DOMPurify.sanitize(svgCode, { USE_PROFILES: { svg: true } });
+                    setSvg(cleanSvg);
                 } catch (e) {
                     console.error("Mermaid Render Error:", e);
+                    setSvg(`<div style="color: #ef4444; font-size: 0.8rem; padding: 1rem; border: 1px dashed #ef4444; border-radius: 0.5rem;">
+                        ⚠️ Diagram syntax error.
+                    </div>`);
                 }
             };
             renderDiagram();
@@ -43,12 +47,11 @@ const Mermaid = ({ chart }) => {
     }, [chart]);
 
     return (
-        <div className="mermaid-container" style={{ minHeight: '100px', display: 'flex', justifyContent: 'center' }}>
-            <div className="mermaid" ref={ref} style={{ visibility: chart ? 'visible' : 'hidden' }}>
-                {chart}
-            </div>
-            {!chart && <div className="mermaid-placeholder">Rendering chart...</div>}
-        </div>
+        <div 
+            className="mermaid-container" 
+            style={{ minHeight: '50px', margin: '1rem 0', display: 'flex', justifyContent: 'center', width: '100%' }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+        />
     );
 };
 
@@ -84,6 +87,92 @@ const UI_MESSAGES = {
         subtopic_error: "AI ne subtopics generate nahi kiye. Dobara try karo."
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+// 📋 SidebarContent — wrapped in React.memo so it ONLY re-renders
+// when sidebar-specific props change (notes, tab). NOT on typing.
+// ─────────────────────────────────────────────────────────────
+const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, setActiveSidebarTab, roadmapData, progress, autoNotes, manualNotes, setManualNotes, handleDownloadPDF, isDesktop, onClose }) {
+    return (
+        <>
+            <div className="sidebar-header">
+                <div className="sidebar-tabs">
+                    <button
+                        className={`sidebar-tab ${activeSidebarTab === 'track' ? 'active' : ''}`}
+                        onClick={() => setActiveSidebarTab('track')}
+                    >
+                        <BookOpenIcon />
+                        <span>Track</span>
+                    </button>
+                    <button
+                        className={`sidebar-tab ${activeSidebarTab === 'notes' ? 'active' : ''}`}
+                        onClick={() => setActiveSidebarTab('notes')}
+                    >
+                        <NoteIcon />
+                        <span>Notes</span>
+                    </button>
+                </div>
+                {!isDesktop && (
+                    <button className="close-sidebar-btn" onClick={onClose}>
+                        ✕
+                    </button>
+                )}
+            </div>
+
+            <div className="sidebar-scroll-area">
+                {activeSidebarTab === 'track' ? (
+                    <div className="track-list">
+                        {roadmapData?.steps?.map((step, idx) => {
+                            const stepNum = idx + 1;
+                            const isCompleted = progress.step > stepNum;
+                            const isCurrent = progress.step === stepNum;
+                            return (
+                                <div key={idx} className={`track-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}>
+                                    <div className="track-dot">{isCompleted ? '✔' : stepNum}</div>
+                                    <div className="track-content">
+                                        <h5>{step.title}</h5>
+                                        <p>{isCurrent ? 'Ongoing...' : isCompleted ? 'Completed' : 'Upcoming'}</p>
+                                    </div>
+                                </div>
+                            );
+                        }) || <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>No roadmap active</p>}
+                    </div>
+                ) : (
+                    <div className="notes-panel">
+                        <div className="notes-section">
+                            <div className="section-label">✨ <span>AI Auto-Notes</span></div>
+                            {autoNotes ? (
+                                <div className="auto-notes-display glass-card" style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.7 }}>{autoNotes}</div>
+                            ) : (
+                                <div className="empty-notes glass-card">
+                                    <p>AI automatically saves study notes here as you chat...</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="notes-section">
+                            <div className="section-label">📋 <span>Personal Notes</span></div>
+                            <textarea
+                                className="manual-notes-area glass-card"
+                                placeholder="Apne points yahan likhein..."
+                                value={manualNotes}
+                                onChange={(e) => setManualNotes(e.target.value)}
+                            />
+                        </div>
+                        <div className="notes-actions">
+                            <button className="download-pdf-btn" onClick={handleDownloadPDF} disabled={!autoNotes && !manualNotes}>
+                                ⬇ Download PDF Notes
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+}); // end React.memo
+
+// Simple icon wrappers to avoid importing inside SidebarContent
+const BookOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
+const NoteIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><polyline points="15 3 15 9 21 9"/></svg>;
 
 function App() {
     const [topic, setTopic] = useState('');
@@ -131,8 +220,25 @@ function App() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [showTrackSidebar, setShowTrackSidebar] = useState(false);
+    const [activeSidebarTab, setActiveSidebarTab] = useState('track'); // 'track' or 'notes'
+    const [autoNotes, setAutoNotes] = useState('');
+    const [manualNotes, setManualNotes] = useState('');
+    const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
     const [cooldown, setCooldown] = useState(0); // ⏱️ Cooldown timer in seconds
+    const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1100);
+
     const chatEndRef = useRef(null);
+
+    useEffect(() => {
+        const handleResize = () => setIsDesktop(window.innerWidth >= 1100);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Stable callbacks for SidebarContent (React.memo needs stable refs to bail out properly)
+    const stableSetManualNotes = React.useCallback((e) => setManualNotes(e.target.value), []);
+    const stableSetActiveSidebarTab = React.useCallback((tab) => setActiveSidebarTab(tab), []);
+    const stableCloseSidebar = React.useCallback(() => setShowTrackSidebar(false), []);
 
     // Load sessions and check auth status on mount
     useEffect(() => {
@@ -375,6 +481,19 @@ function App() {
             setMessages(initialHistory);
             setTopic(learningTopic);
 
+            const initialProgress = { 
+                step: 1, 
+                total_steps: roadmapData?.steps?.length || 0, 
+                current_concept: roadmapData?.steps?.[0]?.title || '' 
+            };
+            setProgress(initialProgress);
+            setXp(0);
+            setStreak(0);
+
+            const note = res.data.parsed?.study_note || '';
+            if (note) setAutoNotes('- ' + note);
+
+            // Sync new session
             const newSession = {
                 id: Date.now().toString(),
                 topic: learningTopic,
@@ -382,7 +501,12 @@ function App() {
                 language: language,
                 messages: initialHistory,
                 summary: '',
+                progress: initialProgress,
+                xp: xp,
+                streak: streak,
                 roadmapData: roadmapData, // 🗺️ Save roadmap for persistence
+                autoNotes: note ? '- ' + note : '',
+                manualNotes: manualNotes,
                 timestamp: Date.now()
             };
             syncSession(newSession);
@@ -503,6 +627,12 @@ Task Answer: ${finalInput}`;
 
             // Sync updated session to backend (summary ke saath)
             const currentSession = sessions.find(s => s.topic === topic);
+            
+            // Extract study_note and update autoNotes
+            const note = res.data.parsed?.study_note;
+            const newAutoNotes = note ? (autoNotes ? autoNotes + '\n\n- ' + note : '- ' + note) : autoNotes;
+            if (note) setAutoNotes(newAutoNotes);
+
             const updatedSession = {
                 id: currentSession?.id || Date.now().toString(),
                 topic: topic,
@@ -510,7 +640,12 @@ Task Answer: ${finalInput}`;
                 language: language,
                 messages: updatedMessages,
                 summary: latestSummary,
+                progress: progress,
+                xp: xp,
+                streak: streak,
                 roadmapData: roadmapData, // 🗺️ Keep roadmap in sync
+                autoNotes: newAutoNotes,
+                manualNotes: manualNotes,
                 timestamp: Date.now()
             };
             syncSession(updatedSession);
@@ -541,6 +676,11 @@ Task Answer: ${finalInput}`;
         setMessages(session.messages);
         setConversationSummary(session.summary || '');
         setRoadmapData(session.roadmapData || null); // 🗺️ Restore roadmap
+        setProgress(session.progress || { step: 0, total_steps: 0, current_concept: '' });
+        setXp(session.xp || 0);
+        setStreak(session.streak || 0);
+        setAutoNotes(session.autoNotes || '');
+        setManualNotes(session.manualNotes || '');
         setIsStarted(true);
         setAppStage('learning'); // Ensure stage is correct
     };
@@ -585,6 +725,7 @@ Task Answer: ${finalInput}`;
         setStreak(0);
         setProgress({ step: 0, total_steps: 0, current_concept: '' });
         setMcqState({});
+        setError(null); // Clear errors on reset
         // Reset explore flow
         setAppStage('home');
         setSubtopics([]);
@@ -698,6 +839,78 @@ Task Answer: ${finalInput}`;
         // 🤖 Just update state, don't auto-send anymore
         const feedback = `[MCQ] I chose "${optionText}". (Result: ${isCorrect ? 'Correct' : 'Incorrect'})`;
         console.log("MCQ Selection:", feedback);
+        setError(null); // Clear error after selection
+    };
+
+    const handleGenerateNotes = async () => {
+        const token = localStorage.getItem('ai-tutor-token');
+        if (!token) return;
+
+        setIsGeneratingNotes(true);
+        try {
+            const res = await axios.post(`${BASE_URL}/api/notes/generate`, {
+                history: messages,
+                topic: topic,
+                language: language
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (res.data.notes) {
+                setAutoNotes(res.data.notes);
+                setActiveSidebarTab('notes');
+            }
+        } catch (err) {
+            console.error("Notes Error:", err);
+            setError(language === 'English' ? "Failed to generate notes." : "Notes banane mein problem hui.");
+        } finally {
+            setIsGeneratingNotes(false);
+        }
+    };
+
+    const handleDownloadPDF = () => {
+        const printWindow = window.open('', '_blank');
+        const content = `
+            <html>
+            <head>
+                <title>Study Notes - ${topic}</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; line-height: 1.6; color: #1e293b; max-width: 800px; margin: 0 auto; background: #fff; }
+                    h1 { color: #4f46e5; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 2.5rem; }
+                    h2 { color: #334155; margin-top: 40px; border-left: 5px solid #4f46e5; padding-left: 15px; font-size: 1.5rem; }
+                    .section { margin-bottom: 40px; }
+                    .notes-content { white-space: pre-wrap; background: #f8fafc; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.1rem; }
+                    .highlight { background: #fef08a; padding: 0 4px; border-radius: 4px; font-weight: 600; }
+                    footer { margin-top: 60px; text-align: center; color: #64748b; font-size: 0.9rem; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+                    @media print {
+                        body { padding: 0; }
+                        .no-print { display: none; }
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Study Notes: ${topic}</h1>
+                
+                <div class="section">
+                    <h2>📚 AI Generated Insights</h2>
+                    <div class="notes-content">${autoNotes || 'No AI notes generated yet.'}</div>
+                </div>
+
+                <div class="section">
+                    <h2>📝 Student Contributions</h2>
+                    <div class="notes-content">${manualNotes || 'No manual notes added.'}</div>
+                </div>
+
+                <footer>Generated by Smart AI Tutor on ${new Date().toLocaleDateString()}</footer>
+                
+                <script>
+                    window.onload = () => { setTimeout(() => { window.print(); }, 500); };
+                </script>
+            </body>
+            </html>
+        `;
+        printWindow.document.write(content);
+        printWindow.document.close();
     };
 
     // JSON and Markdown Renderer
@@ -883,450 +1096,445 @@ Task Answer: ${finalInput}`;
 
     if (!isAuthenticated) {
         return (
-            <div className="setup-container animate-fade-in">
-                <header className="hero">
-                    <GraduationCap size={64} className="hero-icon" />
-                    <h1>Smart AI Tutor</h1>
-                    <p>Log in to access your personalized learning roadmaps.</p>
-                </header>
-
-                <form onSubmit={handleAuthSubmit} className="setup-card glass-card">
-                    <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
-                    {error && <div className="error-banner">{error}</div>}
-
-                    {authMode === 'register' && (
-                        <div className="input-group">
-                            <label>Full Name</label>
-                            <input
-                                type="text"
-                                placeholder="Your name"
-                                value={authForm.name}
-                                onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                                required
-                            />
-                        </div>
-                    )}
-
-                    <div className="input-group">
-                        <label>{authMode === 'login' ? 'Email or Phone Number' : 'Email'}</label>
-                        <input
-                            type={authMode === 'login' ? 'text' : 'email'}
-                            placeholder={authMode === 'login' ? 'you@example.com or 9876543210' : 'you@example.com'}
-                            value={authForm.email}
-                            onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                            required
-                        />
-                    </div>
-
-                    {authMode === 'register' && (
-                        <div className="input-group">
-                            <label>Phone Number</label>
-                            <input
-                                type="tel"
-                                placeholder="9876543210"
-                                value={authForm.phoneNumber}
-                                onChange={(e) => setAuthForm({ ...authForm, phoneNumber: e.target.value })}
-                                required
-                            />
-                        </div>
-                    )}
-
-                    <div className="input-group">
-                        <label>Password</label>
-                        <div className="input-eye-wrap">
-                            <input
-                                type={showPassword ? 'text' : 'password'}
-                                placeholder="••••••••"
-                                value={authForm.password}
-                                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                                required
-                            />
-                            <button type="button" className="eye-toggle" onClick={() => setShowPassword(p => !p)} tabIndex={-1}>
-                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Confirm Password — only on Register */}
-                    {authMode === 'register' && (
-                        <div className="input-group">
-                            <label>Confirm Password</label>
-                            <div className="input-eye-wrap">
+            <div className="App">
+                <div className="setup-container animate-fade-in">
+                    <header className="hero">
+                        <GraduationCap size={64} className="hero-icon" />
+                        <h1>Smart AI Tutor</h1>
+                        <p>Log in to access your personalized learning roadmaps.</p>
+                    </header>
+                    <form onSubmit={handleAuthSubmit} className="setup-card glass-card">
+                        <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
+                        {error && <div className="error-banner">{error}</div>}
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Full Name</label>
                                 <input
-                                    type={showConfirm ? 'text' : 'password'}
-                                    placeholder="••••••••"
-                                    value={authForm.confirmPassword}
-                                    onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                                    type="text"
+                                    placeholder="Your name"
+                                    value={authForm.name}
+                                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
                                     required
                                 />
-                                <button type="button" className="eye-toggle" onClick={() => setShowConfirm(p => !p)} tabIndex={-1}>
-                                    {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </div>
+                        )}
+                        <div className="input-group">
+                            <label>{authMode === 'login' ? 'Email or Phone Number' : 'Email'}</label>
+                            <input
+                                type={authMode === 'login' ? 'text' : 'email'}
+                                placeholder={authMode === 'login' ? 'you@example.com or 9876543210' : 'you@example.com'}
+                                value={authForm.email}
+                                onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                                required
+                            />
+                        </div>
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Phone Number</label>
+                                <input
+                                    type="tel"
+                                    placeholder="9876543210"
+                                    value={authForm.phoneNumber}
+                                    onChange={(e) => setAuthForm({ ...authForm, phoneNumber: e.target.value })}
+                                    required
+                                />
+                            </div>
+                        )}
+                        <div className="input-group">
+                            <label>Password</label>
+                            <div className="input-eye-wrap">
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="••••••••"
+                                    value={authForm.password}
+                                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                                    required
+                                />
+                                <button type="button" className="eye-toggle" onClick={() => setShowPassword(p => !p)} tabIndex={-1}>
+                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
                         </div>
-                    )}
-
-                    <button type="submit" className="start-btn" disabled={isLoading}>
-                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : authMode === 'login' ? 'Login' : 'Sign Up'}
-                    </button>
-
-                    <p className="auth-toggle-text">
-                        {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
-                        <button type="button" className="text-btn" onClick={() => {
-                            setAuthMode(authMode === 'login' ? 'register' : 'login');
-                            setError(null);
-                            setAuthForm({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
-                            setShowPassword(false);
-                            setShowConfirm(false);
-                        }}>
-                            {authMode === 'login' ? 'Sign up here' : 'Login here'}
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Confirm Password</label>
+                                <div className="input-eye-wrap">
+                                    <input
+                                        type={showConfirm ? 'text' : 'password'}
+                                        placeholder="••••••••"
+                                        value={authForm.confirmPassword}
+                                        onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                                        required
+                                    />
+                                    <button type="button" className="eye-toggle" onClick={() => setShowConfirm(p => !p)} tabIndex={-1}>
+                                        {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        <button type="submit" className="start-btn" disabled={isLoading}>
+                            {isLoading ? <Loader2 className="animate-spin" size={20} /> : authMode === 'login' ? 'Login' : 'Sign Up'}
                         </button>
-                    </p>
-                </form>
+                        <p className="auth-toggle-text">
+                            {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+                            <button type="button" className="text-btn" onClick={() => {
+                                setAuthMode(authMode === 'login' ? 'register' : 'login');
+                                setError(null);
+                                setAuthForm({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
+                                setShowPassword(false);
+                                setShowConfirm(false);
+                            }}>
+                                {authMode === 'login' ? 'Sign up here' : 'Login here'}
+                            </button>
+                        </p>
+                    </form>
+                </div>
             </div>
         );
     }
 
     if (!isStarted) {
         return (
-            <div className="setup-container animate-fade-in">
-                <header className="hero">
-                    <div className="profile-trigger" onClick={() => setShowProfile(!showProfile)}>
-                        <div className="avatar-small">
-                            <User size={20} />
-                        </div>
-                    </div>
-
-                    <AnimatePresence>
-                        {showProfile && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 10 }}
-                                className="profile-dropdown glass-card shadow-xl"
-                            >
-                                <div className="profile-header">
-                                    <div className="avatar-large">
-                                        <User size={32} />
-                                    </div>
-                                    <div className="profile-info">
-                                        <p className="profile-email">{userEmail}</p>
-                                        <p className="profile-status">
-                                            {isApiKeySet ? '✅ API Key Active' : '❌ API Key Missing'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="profile-actions">
-                                    <button className="profile-action-btn" onClick={() => { setShowSettings(true); setShowProfile(false); }}>
-                                        <Key size={16} /> Manage API Key
-                                    </button>
-                                    <button className="profile-action-btn logout-danger" onClick={handleLogout}>
-                                        <LogOut size={16} /> Logout
-                                    </button>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
-                    <GraduationCap size={64} className="hero-icon" />
-                    <h1>Smart AI Tutor</h1>
-                    <p>Log in to access your personalized learning roadmaps.</p>
-                </header>
-
-                {(!isApiKeySet || showSettings) ? (
-                    <form onSubmit={handleSaveApiKey} className="setup-card glass-card warning-border">
-                        <h3>🔑 Setup Gemini API Key</h3>
-                        <div className="api-key-guide">
-                            <p className="guide-title">📋 How to get your Google API Key?</p>
-                            <ol className="guide-steps">
-                                <li>Click the link below 👇</li>
-                                <li>Sign in with your <strong>Google account</strong></li>
-                                <li>Click <strong>"Create API Key"</strong> button</li>
-                                <li>Copy the key and paste it below</li>
-                            </ol>
-                            <a
-                                href="https://aistudio.google.com/app/apikey"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="api-key-link"
-                            >
-                                🔗 Google AI Studio — Get Free API Key
-                            </a>
-                            <p className="guide-note">✅ Completely Free &nbsp;•&nbsp; 🔒 Your key is encrypted &amp; stored securely</p>
-                        </div>
-                        {error && <div className="error-banner">{error}</div>}
-                        <div className="input-group">
-                            <label>Gemini API Key</label>
-                            <div className="input-eye-wrap">
-                                <input
-                                    type={showKey ? 'text' : 'password'}
-                                    placeholder="AIzaSy..."
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                    required
-                                />
-                                <button type="button" className="eye-toggle" onClick={() => setShowKey(p => !p)} tabIndex={-1}>
-                                    {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
+            <div className="App">
+                <div className="setup-container animate-fade-in">
+                    <header className="hero">
+                        <div className="profile-trigger" onClick={() => setShowProfile(!showProfile)}>
+                            <div className="avatar-small">
+                                <User size={20} />
                             </div>
                         </div>
-                        <div className="row">
-                            <button type="submit" className="start-btn flex-1" disabled={isLoading}>
-                                {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Save Securely'}
-                            </button>
-                            {isApiKeySet && (
-                                <button type="button" className="back-btn" onClick={() => setShowSettings(false)}>
-                                    Cancel
+
+                        <AnimatePresence>
+                            {showProfile && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 10 }}
+                                    className="profile-dropdown glass-card shadow-xl"
+                                >
+                                    <div className="profile-header">
+                                        <div className="avatar-large">
+                                            <User size={32} />
+                                        </div>
+                                        <div className="profile-info">
+                                            <p className="profile-email">{userEmail}</p>
+                                            <p className="profile-status">
+                                                {isApiKeySet ? '✅ API Key Active' : '❌ API Key Missing'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="profile-actions">
+                                        <button className="profile-action-btn" onClick={() => { setShowSettings(true); setShowProfile(false); }}>
+                                            <Key size={16} /> Manage API Key
+                                        </button>
+                                        <button className="profile-action-btn logout-danger" onClick={handleLogout}>
+                                            <LogOut size={16} /> Logout
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <GraduationCap size={64} className="hero-icon" />
+                        <h1>Smart AI Tutor</h1>
+                        <p>Log in to access your personalized learning roadmaps.</p>
+                    </header>
+
+                    {(!isApiKeySet || showSettings) ? (
+                        <form onSubmit={handleSaveApiKey} className="setup-card glass-card warning-border">
+                            <h3>🔑 Setup Gemini API Key</h3>
+                            <div className="api-key-guide">
+                                <p className="guide-title">📋 How to get your Google API Key?</p>
+                                <ol className="guide-steps">
+                                    <li>Click the link below 👇</li>
+                                    <li>Sign in with your <strong>Google account</strong></li>
+                                    <li>Click <strong>"Create API Key"</strong> button</li>
+                                    <li>Copy the key and paste it below</li>
+                                </ol>
+                                <a
+                                    href="https://aistudio.google.com/app/apikey"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="api-key-link"
+                                >
+                                    🔗 Google AI Studio — Get Free API Key
+                                </a>
+                                <p className="guide-note">✅ Completely Free &nbsp;•&nbsp; 🔒 Your key is encrypted &amp; stored securely</p>
+                            </div>
+                            {error && <div className="error-banner">{error}</div>}
+                            <div className="input-group">
+                                <label>Gemini API Key</label>
+                                <div className="input-eye-wrap">
+                                    <input
+                                        type={showKey ? 'text' : 'password'}
+                                        placeholder="AIzaSy..."
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                        required
+                                    />
+                                    <button type="button" className="eye-toggle" onClick={() => setShowKey(p => !p)} tabIndex={-1}>
+                                        {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="row">
+                                <button type="submit" className="start-btn flex-1" disabled={isLoading}>
+                                    {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Save Securely'}
                                 </button>
+                                {isApiKeySet && (
+                                    <button type="button" className="back-btn" onClick={() => setShowSettings(false)}>
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+                    ) : appStage === 'explore' ? (
+                        /* ── STAGE 2: Subtopic Multi-Select ── */
+                        <div className="explore-stage glass-card">
+                            <div className="explore-header">
+                                <button className="back-btn" onClick={() => { setAppStage('home'); setSubtopics([]); setSelectedSubtopics([]); setAllSelected(false); }}>
+                                    <ArrowLeft size={18} />
+                                </button>
+                                <div style={{ flex: 1 }}>
+                                    <h3>🗺️ What do you want to learn in <em>{topic}</em>?</h3>
+                                    <p className="explore-sub">Select one or more subtopics → then click Continue</p>
+                                </div>
+                                <button
+                                    className={`select-all-btn ${allSelected ? 'deselect' : ''}`}
+                                    onClick={handleSelectAll}
+                                >
+                                    {allSelected ? '✖ Deselect All' : '✔ Select All'}
+                                </button>
+                            </div>
+                            <div className="subtopics-grid">
+                                {subtopics.map((s, i) => {
+                                    const isSelected = selectedSubtopics.some(x => x.title === s.title);
+                                    return (
+                                        <motion.button
+                                            key={i}
+                                            className={`subtopic-card ${isSelected ? 'selected' : ''}`}
+                                            onClick={() => handleSubtopicClick(s)}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: i * 0.07 }}
+                                            whileHover={{ scale: 1.03 }}
+                                            whileTap={{ scale: 0.97 }}
+                                        >
+                                            {isSelected && <span className="check-badge">✔</span>}
+                                            <span className="subtopic-emoji">{s.emoji}</span>
+                                            <h4>{s.title}</h4>
+                                            <p>{s.description}</p>
+                                        </motion.button>
+                                    );
+                                })}
+                            </div>
+                            {selectedSubtopics.length > 0 && (
+                                <motion.button
+                                    className="explore-continue-btn"
+                                    onClick={handleExploreContinue}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                >
+                                    Continue with {selectedSubtopics.length} topic{selectedSubtopics.length > 1 ? 's' : ''} <ChevronRight size={18} />
+                                </motion.button>
                             )}
                         </div>
-                    </form>
-                ) : appStage === 'explore' ? (
-                    /* ── STAGE 2: Subtopic Multi-Select ── */
-                    <div className="explore-stage glass-card">
-                        <div className="explore-header">
-                            <button className="back-btn" onClick={() => { setAppStage('home'); setSubtopics([]); setSelectedSubtopics([]); setAllSelected(false); }}>
-                                <ArrowLeft size={18} />
+                    ) : appStage === 'roadmap-choice' ? (
+                        /* ── STAGE 3: Full or Short Roadmap ── */
+                        <div className="roadmap-choice-stage glass-card">
+                            <button className="back-btn mb-1" onClick={() => setAppStage('explore')}>
+                                <ArrowLeft size={18} /> Back
                             </button>
-                            <div style={{ flex: 1 }}>
-                                <h3>🗺️ What do you want to learn in <em>{topic}</em>?</h3>
-                                <p className="explore-sub">Select one or more subtopics → then click Continue</p>
+                            <div className="roadmap-choice-header">
+                                <span className="choice-emoji">{selectedSubtopic?.emoji}</span>
+                                <h3>{selectedSubtopic?.title}</h3>
+                                <p>{selectedSubtopic?.description}</p>
                             </div>
-                            <button
-                                className={`select-all-btn ${allSelected ? 'deselect' : ''}`}
-                                onClick={handleSelectAll}
-                            >
-                                {allSelected ? '✖ Deselect All' : '✔ Select All'}
-                            </button>
+                            <p className="roadmap-choice-label">Roadmap kitna detailed chahiye?</p>
+                            <div className="roadmap-type-btns">
+                                <motion.button
+                                    className="roadmap-type-btn short"
+                                    onClick={() => handleRoadmapFetch('short')}
+                                    whileHover={{ scale: 1.04 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    disabled={isLoading || cooldown > 0}
+                                >
+                                    <span>⚡</span>
+                                    <h4>Short</h4>
+                                    <p>10 steps — Quick Start</p>
+                                </motion.button>
+                                <motion.button
+                                    className="roadmap-type-btn full"
+                                    onClick={() => handleRoadmapFetch('full')}
+                                    whileHover={{ scale: 1.04 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    disabled={isLoading || cooldown > 0}
+                                >
+                                    <span>📚</span>
+                                    <h4>Full</h4>
+                                    <p>20 steps — Deep Dive</p>
+                                </motion.button>
+                                <motion.button
+                                    className="roadmap-type-btn master"
+                                    onClick={() => handleRoadmapFetch('master')}
+                                    whileHover={{ scale: 1.04 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    disabled={isLoading || cooldown > 0}
+                                >
+                                    <span>🏆</span>
+                                    <h4>Master</h4>
+                                    <p>50 steps — Pro Track</p>
+                                </motion.button>
+                                <motion.button
+                                    className="roadmap-type-btn advance"
+                                    onClick={() => handleRoadmapFetch('advance')}
+                                    whileHover={{ scale: 1.04 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    disabled={isLoading || cooldown > 0}
+                                >
+                                    <span>🚀</span>
+                                    <h4>Advance</h4>
+                                    <p>100 steps — Ultimate</p>
+                                </motion.button>
+                            </div>
+                            {isLoading && <div className="loading-hint"><Loader2 className="animate-spin" size={20} /> Generating your roadmap...</div>}
+                            {cooldown > 0 && <div className="loading-hint cooldown">⏳ Please wait {cooldown}s before next request...</div>}
                         </div>
-                        <div className="subtopics-grid">
-                            {subtopics.map((s, i) => {
-                                const isSelected = selectedSubtopics.some(x => x.title === s.title);
-                                return (
-                                    <motion.button
-                                        key={i}
-                                        className={`subtopic-card ${isSelected ? 'selected' : ''}`}
-                                        onClick={() => handleSubtopicClick(s)}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ delay: i * 0.07 }}
-                                        whileHover={{ scale: 1.03 }}
-                                        whileTap={{ scale: 0.97 }}
-                                    >
-                                        {isSelected && <span className="check-badge">✔</span>}
-                                        <span className="subtopic-emoji">{s.emoji}</span>
-                                        <h4>{s.title}</h4>
-                                        <p>{s.description}</p>
-                                    </motion.button>
-                                );
-                            })}
-                        </div>
-                        {selectedSubtopics.length > 0 && (
-                            <motion.button
-                                className="explore-continue-btn"
-                                onClick={handleExploreContinue}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                            >
-                                Continue with {selectedSubtopics.length} topic{selectedSubtopics.length > 1 ? 's' : ''} <ChevronRight size={18} />
-                            </motion.button>
-                        )}
-                    </div>
-                ) : appStage === 'roadmap-choice' ? (
-                    /* ── STAGE 3: Full or Short Roadmap ── */
-                    <div className="roadmap-choice-stage glass-card">
-                        <button className="back-btn mb-1" onClick={() => setAppStage('explore')}>
-                            <ArrowLeft size={18} /> Back
-                        </button>
-                        <div className="roadmap-choice-header">
-                            <span className="choice-emoji">{selectedSubtopic?.emoji}</span>
-                            <h3>{selectedSubtopic?.title}</h3>
-                            <p>{selectedSubtopic?.description}</p>
-                        </div>
-                        <p className="roadmap-choice-label">Roadmap kitna detailed chahiye?</p>
-                        <div className="roadmap-type-btns">
-                            <motion.button
-                                className="roadmap-type-btn short"
-                                onClick={() => handleRoadmapFetch('short')}
-                                whileHover={{ scale: 1.04 }}
-                                whileTap={{ scale: 0.96 }}
-                                disabled={isLoading || cooldown > 0}
-                            >
-                                <span>⚡</span>
-                                <h4>Short</h4>
-                                <p>10 steps — Quick Start</p>
-                            </motion.button>
-                            <motion.button
-                                className="roadmap-type-btn full"
-                                onClick={() => handleRoadmapFetch('full')}
-                                whileHover={{ scale: 1.04 }}
-                                whileTap={{ scale: 0.96 }}
-                                disabled={isLoading || cooldown > 0}
-                            >
-                                <span>📚</span>
-                                <h4>Full</h4>
-                                <p>20 steps — Deep Dive</p>
-                            </motion.button>
-                            <motion.button
-                                className="roadmap-type-btn master"
-                                onClick={() => handleRoadmapFetch('master')}
-                                whileHover={{ scale: 1.04 }}
-                                whileTap={{ scale: 0.96 }}
-                                disabled={isLoading || cooldown > 0}
-                            >
-                                <span>🏆</span>
-                                <h4>Master</h4>
-                                <p>50 steps — Pro Track</p>
-                            </motion.button>
-                            <motion.button
-                                className="roadmap-type-btn advance"
-                                onClick={() => handleRoadmapFetch('advance')}
-                                whileHover={{ scale: 1.04 }}
-                                whileTap={{ scale: 0.96 }}
-                                disabled={isLoading || cooldown > 0}
-                            >
-                                <span>🚀</span>
-                                <h4>Advance</h4>
-                                <p>100 steps — Ultimate</p>
-                            </motion.button>
-                        </div>
-                        {isLoading && <div className="loading-hint"><Loader2 className="animate-spin" size={20} /> Generating your roadmap...</div>}
-                        {cooldown > 0 && <div className="loading-hint cooldown">⏳ Please wait {cooldown}s before next request...</div>}
-                    </div>
-                ) : appStage === 'roadmap' ? (
-                    /* ── STAGE 4: Roadmap Display ── */
-                    <div className="roadmap-display-stage glass-card">
-                        <div className="roadmap-display-header">
-                            <button className="back-btn" onClick={() => setAppStage('roadmap-choice')}>
-                                <ArrowLeft size={18} />
-                            </button>
-                            <div>
-                                <h3>🗺️ Your Learning Roadmap</h3>
-                                <div className="roadmap-meta">
-                                    <span className="meta-badge">⏱️ {roadmapData?.estimated_time}</span>
-                                    <span className="meta-badge">📊 {roadmapData?.difficulty}</span>
-                                    <span className="meta-badge">{roadmapType === 'full' ? '📚 Full' : '⚡ Short'}</span>
+                    ) : appStage === 'roadmap' ? (
+                        /* ── STAGE 4: Roadmap Display ── */
+                        <div className="roadmap-display-stage glass-card">
+                            <div className="roadmap-display-header">
+                                <button className="back-btn" onClick={() => setAppStage('roadmap-choice')}>
+                                    <ArrowLeft size={18} />
+                                </button>
+                                <div>
+                                    <h3>🗺️ Your Learning Roadmap</h3>
+                                    <div className="roadmap-meta">
+                                        <span className="meta-badge">⏱️ {roadmapData?.estimated_time}</span>
+                                        <span className="meta-badge">📊 {roadmapData?.difficulty}</span>
+                                        <span className="meta-badge">{roadmapType === 'full' ? '📚 Full' : '⚡ Short'}</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="roadmap-topic-title">
-                            {selectedSubtopic?.emoji} {topic} → {selectedSubtopic?.title}
-                        </div>
-                        <div className="roadmap-steps-list">
-                            {roadmapData?.steps?.map((step, i) => (
-                                <motion.div
-                                    key={i}
-                                    className="roadmap-step-item"
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.08 }}
-                                >
-                                    <div className="step-number">{step.step}</div>
-                                    <div className="step-content">
-                                        <div className="step-header">
-                                            <span className="step-emoji">{step.emoji}</span>
-                                            <h4>{step.title}</h4>
-                                        </div>
-                                        <p>{step.description}</p>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
-                        <motion.button
-                            className="start-learning-btn"
-                            onClick={startTutor}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            disabled={isLoading}
-                        >
-                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Starting...</> : <>🚀 Start Learning from Step 1 <ChevronRight size={20} /></>}
-                        </motion.button>
-                    </div>
-                ) : (
-                    /* ── STAGE 1: Home / Topic Input ── */
-                    <form onSubmit={handleTopicExplore} className="setup-card glass-card">
-                        <div className="input-group">
-                            <label>What do you want to learn today?</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Quantum Physics, React Hooks, Cooking Pasta..."
-                                value={topic}
-                                onChange={(e) => setTopic(e.target.value)}
-                                required
-                            />
-                        </div>
-
-                        <div className="row">
-                            <div className="input-group flex-1">
-                                <label>Style</label>
-                                <select value={mode} onChange={(e) => setMode(e.target.value)}>
-                                    <option value="beginner">👶 Beginner</option>
-                                    <option value="practical">🛠️ Practical</option>
-                                    <option value="deep">🧠 Deep</option>
-                                </select>
+                            <div className="roadmap-topic-title">
+                                {selectedSubtopic?.emoji} {topic} → {selectedSubtopic?.title}
                             </div>
-
-                            <div className="input-group flex-1">
-                                <label>Language</label>
-                                <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                                    <option value="English">🇬🇧 English</option>
-                                    <option value="Hindi">🇮🇳 Hindi</option>
-                                    <option value="Hinglish">🇮🇳 Hinglish</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <button type="submit" className="start-btn" disabled={isLoading || cooldown > 0}>
-                            {isLoading ? <><Loader2 className="animate-spin" size={20} /> Exploring...</> : cooldown > 0 ? `Wait ${cooldown}s...` : <>Explore Topic <ChevronRight size={20} /></>}
-                        </button>
-                        {error && <div className="error-banner">{error}</div>}
-                    </form>
-                )}
-
-                {sessions.length > 0 && (
-                    <div className="recent-sessions">
-                        <div className="history-title">
-                            <History size={16} />
-                            <span>Recent Topics</span>
-                        </div>
-                        <div className="history-list">
-                            {sessions.map(s => (
-                                <motion.div
-                                    key={s.id}
-                                    whileHover={{ x: 5 }}
-                                    className="history-item"
-                                    onClick={() => resumeSession(s)}
-                                >
-                                    <div className="history-item-info">
-                                        <h4>{s.topic}</h4>
-                                        <span>{s.mode} • {s.language}</span>
-                                    </div>
-                                    <button
-                                        className="delete-session"
-                                        onClick={(e) => deleteSession(e, s.id)}
-                                        title="Remove from history"
+                            <div className="roadmap-steps-list">
+                                {roadmapData?.steps?.map((step, i) => (
+                                    <motion.div
+                                        key={i}
+                                        className="roadmap-step-item"
+                                        initial={{ opacity: 0, x: -20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: i * 0.08 }}
                                     >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </motion.div>
-                            ))}
+                                        <div className="step-number">{step.step}</div>
+                                        <div className="step-content">
+                                            <div className="step-header">
+                                                <span className="step-emoji">{step.emoji}</span>
+                                                <h4>{step.title}</h4>
+                                            </div>
+                                            <p>{step.description}</p>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                            <motion.button
+                                className="start-learning-btn"
+                                onClick={startTutor}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? <><Loader2 className="animate-spin" size={20} /> Starting...</> : <>🚀 Start Learning from Step 1 <ChevronRight size={20} /></>}
+                            </motion.button>
                         </div>
-                    </div>
-                )}
+                    ) : (
+                        /* ── STAGE 1: Home / Topic Input ── */
+                        <form onSubmit={handleTopicExplore} className="setup-card glass-card">
+                            <div className="input-group">
+                                <label>What do you want to learn today?</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Quantum Physics, React Hooks, Cooking Pasta..."
+                                    value={topic}
+                                    onChange={(e) => setTopic(e.target.value)}
+                                    required
+                                />
+                            </div>
 
-                {isApiKeySet && !showSettings && (
+                            <div className="row">
+                                <div className="input-group flex-1">
+                                    <label>Style</label>
+                                    <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                                        <option value="beginner">👶 Beginner</option>
+                                        <option value="practical">🛠️ Practical</option>
+                                        <option value="deep">🧠 Deep</option>
+                                    </select>
+                                </div>
+
+                                <div className="input-group flex-1">
+                                    <label>Language</label>
+                                    <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                                        <option value="English">🇬🇧 English</option>
+                                        <option value="Hindi">🇮🇳 Hindi</option>
+                                        <option value="Hinglish">🇮🇳 Hinglish</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" className="start-btn" disabled={isLoading || cooldown > 0}>
+                                {isLoading ? <><Loader2 className="animate-spin" size={20} /> Exploring...</> : cooldown > 0 ? `Wait ${cooldown}s...` : <>Explore Topic <ChevronRight size={20} /></>}
+                            </button>
+                            {error && <div className="error-banner">{error}</div>}
+                        </form>
+                    )}
+
+                    {sessions.length > 0 && appStage === 'home' && (
+                        <div className="recent-sessions">
+                            <div className="history-title">
+                                <History size={16} />
+                                <span>Recent Topics</span>
+                            </div>
+                            <div className="history-list">
+                                {sessions.map(s => (
+                                    <motion.div
+                                        key={s.id}
+                                        whileHover={{ x: 5 }}
+                                        className="history-item"
+                                        onClick={() => resumeSession(s)}
+                                    >
+                                        <div className="history-item-info">
+                                            <h4>{s.topic}</h4>
+                                            <span>{s.mode} • {s.language}</span>
+                                        </div>
+                                        <button
+                                            className="delete-session"
+                                            onClick={(e) => deleteSession(e, s.id)}
+                                            title="Remove from history"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {isApiKeySet && !showSettings && (
                     <button className="logout-btn" onClick={() => setShowSettings(true)}>
                         Update API Key
                     </button>
                 )}
             </div>
+        </div>
         );
     }
 
     return (
-        <div className="chat-container">
+        <div className="App">
+            <div className="chat-container">
             {/* 🛑 ROADMAP FOCUS GUARD — Exit Warning Modal */}
             {showExitWarning && (
                 <div className="exit-warning-overlay">
@@ -1362,61 +1570,75 @@ Task Answer: ${finalInput}`;
                     </div>
                 </div>
             )}
-            <header className="chat-header glass-card">
-                <div className="header-info">
-                    <button onClick={resetChat} className="back-btn" title="Go back to setup">
-                        <ArrowLeft size={20} />
-                    </button>
-                    <BookOpen size={24} className="hide-mobile" />
-                    <div className="header-text-container">
-                        <h2>{topic}</h2>
-                        <span>{mode.charAt(0).toUpperCase() + mode.slice(1)} • {language}</span>
-                    </div>
-                </div>
-
-                <div className="header-stats">
-                    {roadmapData?.steps && (
-                        <button 
-                            className={`sidebar-toggle-btn ${showTrackSidebar ? 'active' : ''}`}
-                            onClick={() => setShowTrackSidebar(!showTrackSidebar)}
-                            title="Toggle Roadmap Track"
-                        >
-                            <History size={18} />
-                            <span className="hide-mobile">Track</span>
-                        </button>
-                    )}
-                    <div className="stat-badge xp-badge">
-                        <span>⚡ {xp} XP</span>
-                    </div>
-                    {streak > 1 && (
-                        <div className="stat-badge streak-badge">
-                            <span>🔥 {streak}</span>
-                        </div>
-                    )}
-                    {progress.total_steps > 0 && (
-                        <div className="progress-tracker hide-mobile">
-                            <div className="progress-info">
-                                <span className="progress-label">Progress: <b>Step {progress.step}/{progress.total_steps}</b></span>
-                                <span className="progress-percentage">{Math.round((progress.step / progress.total_steps) * 100)}%</span>
+            {/* Structural Flex Container */}
+            <div className={`chat-content-split ${isDesktop && roadmapData?.steps ? 'has-sidebar' : 'no-sidebar'}`}>
+                {/* 📝 Left Side: Main Column (Header + Messages + Input) */}
+                <div className="messages-container">
+                    <header className="chat-header">
+                        <div className="header-main-row">
+                            <div className="header-left">
+                                <button onClick={resetChat} className="back-btn" title="Go back to setup">
+                                    <ArrowLeft size={18} />
+                                </button>
+                                <div className="header-text-container">
+                                    <h2 title={topic}>{topic}</h2>
+                                    <div className="header-meta">
+                                        <span className="meta-tag">{mode}</span>
+                                        <span className="meta-sep">•</span>
+                                        <span className="meta-tag">{language}</span>
+                                        {progress.total_steps > 0 && (
+                                            <>
+                                                <span className="meta-sep">•</span>
+                                                <span className="meta-progress-text">
+                                                    <span className="hide-mobile">Step </span>{progress.step}/{progress.total_steps}
+                                                    <span className="progress-percent-label"> ({Math.round((progress.step / progress.total_steps) * 100)}%)</span>
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="progress-bar-bg">
+
+                            <div className="header-right">
+                                <div className="header-stats">
+                                    {streak > 1 && (
+                                        <div className="stat-badge streak-badge" title="Learning Streak">
+                                            <span>🔥 {streak}</span>
+                                        </div>
+                                    )}
+                                    <div className="stat-badge xp-badge" title="Total XP Earned">
+                                        <span>⚡ {xp}<span className="hide-mobile"> XP</span></span>
+                                    </div>
+                                </div>
+                                
+                                <div className="header-controls">
+                                    {roadmapData?.steps && (
+                                        <button 
+                                            className={`sidebar-toggle-btn hide-desktop ${showTrackSidebar ? 'active' : ''}`}
+                                            onClick={() => setShowTrackSidebar(!showTrackSidebar)}
+                                            title="Toggle Menu"
+                                        >
+                                            <Menu size={18} />
+                                        </button>
+                                    )}
+                                    <button onClick={resetChat} className="reset-btn" title="Start new topic">
+                                        <RefreshCcw size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 📊 Slim Progress Bar */}
+                        {progress.total_steps > 0 && (
+                            <div className="header-slim-progress">
                                 <div
                                     className="progress-bar-fill"
                                     style={{ width: `${Math.min(100, (progress.step / progress.total_steps) * 100)}%` }}
                                 ></div>
                             </div>
-                        </div>
-                    )}
-                </div>
-
-                <button onClick={resetChat} className="reset-btn" title="Start new topic">
-                    <RefreshCcw size={18} />
-                </button>
-            </header>
-
-            <div style={{ display: 'flex', flex: 1, height: 'calc(100% - 80px)', overflow: 'hidden' }}>
-                <div className="messages-container" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-                    <div className="messages-list" style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+                        )}
+                    </header>
+                    <div className="messages-list" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', padding: '1rem' }}>
                         {messages.map((msg, i) => (
                             <motion.div
                                 key={i}
@@ -1451,12 +1673,22 @@ Task Answer: ${finalInput}`;
                         <div ref={chatEndRef} />
                     </div>
 
-                    <form onSubmit={sendMessage} className="input-area glass-card">
+                    {error && (
+                        <div className="chat-error-banner animate-fade-in">
+                            <span>⚠️ {error}</span>
+                            <button className="clear-error-btn" onClick={() => setError(null)}>✖</button>
+                        </div>
+                    )}
+
+                    <form onSubmit={sendMessage} className="input-area">
                         <input
                             type="text"
                             placeholder="Respond to the tutor..."
                             value={input}
-                            onChange={(e) => setInput(e.target.value)}
+                            onChange={(e) => {
+                                setInput(e.target.value);
+                                if (error) setError(null);
+                            }}
                             disabled={isLoading}
                         />
                         <button type="submit" disabled={isLoading || !input.trim() || cooldown > 0}>
@@ -1465,48 +1697,53 @@ Task Answer: ${finalInput}`;
                     </form>
                 </div>
 
-                {/* 🗺️ Roadmap Progress Sidebar — Desktop Only Toggleable */}
-                <AnimatePresence>
-                    {showTrackSidebar && roadmapData?.steps && (
-                        <motion.aside 
-                            initial={{ x: 320, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            exit={{ x: 320, opacity: 0 }}
-                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                            className="progress-sidebar"
-                        >
-                            <div className="sidebar-header">
-                                <div className="sidebar-title">
-                                    <BookOpen size={20} className="text-primary" />
-                                    <span>Roadmap Track</span>
-                                </div>
-                                <button className="close-sidebar-btn" onClick={() => setShowTrackSidebar(false)}>
-                                    <ArrowLeft size={16} />
-                                </button>
-                            </div>
-                            <div className="track-list">
-                                {roadmapData.steps.map((step, idx) => {
-                                    const stepNum = idx + 1;
-                                    const isCompleted = progress.step > stepNum;
-                                    const isCurrent = progress.step === stepNum;
+                {/* 🗺️ DESKTOP SIDEBAR — physical sibling, no animations, non-blocking */}
+                {isDesktop && roadmapData?.steps && (
+                    <aside className="progress-sidebar desktop-fixed">
+                        <SidebarContent
+                            activeSidebarTab={activeSidebarTab}
+                            setActiveSidebarTab={stableSetActiveSidebarTab}
+                            roadmapData={roadmapData}
+                            progress={progress}
+                            autoNotes={autoNotes}
+                            manualNotes={manualNotes}
+                            setManualNotes={stableSetManualNotes}
+                            handleDownloadPDF={handleDownloadPDF}
+                            isDesktop={true}
+                            onClose={stableCloseSidebar}
+                        />
+                    </aside>
+                )}
 
-                                    return (
-                                        <div key={idx} className={`track-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}>
-                                            <div className="track-dot">
-                                                {isCompleted ? '✔' : stepNum}
-                                            </div>
-                                            <div className="track-content">
-                                                <h5>{step.title}</h5>
-                                                <p>{isCurrent ? 'Ongoing...' : isCompleted ? 'Completed' : 'Upcoming'}</p>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </motion.aside>
-                    )}
-                </AnimatePresence>
+                {/* 📱 MOBILE SIDEBAR — animated overlay only on small screens */}
+                {!isDesktop && (
+                    <AnimatePresence>
+                        {showTrackSidebar && (
+                            <motion.aside
+                                initial={{ x: 320, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: 320, opacity: 0 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                className="progress-sidebar"
+                            >
+                                <SidebarContent
+                                    activeSidebarTab={activeSidebarTab}
+                                    setActiveSidebarTab={stableSetActiveSidebarTab}
+                                    roadmapData={roadmapData}
+                                    progress={progress}
+                                    autoNotes={autoNotes}
+                                    manualNotes={manualNotes}
+                                    setManualNotes={stableSetManualNotes}
+                                    handleDownloadPDF={handleDownloadPDF}
+                                    isDesktop={false}
+                                    onClose={stableCloseSidebar}
+                                />
+                            </motion.aside>
+                        )}
+                    </AnimatePresence>
+                )}
             </div>
+        </div>
         </div>
     );
 }
