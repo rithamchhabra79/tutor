@@ -110,13 +110,13 @@ body.chat-mode .messages-list {
 
 /* --- SETUP & AUTH SCREENS --- */
 .setup-container {
-    width: 90%;
+    width: 95%;
     max-width: 800px;
-    margin: 4rem auto;
-    padding: 3rem;
+    margin: 2rem auto;
+    padding: 2rem;
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(20px);
-    border-radius: 2.5rem;
+    border-radius: 2rem;
     border: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     animation: slideUp 0.8s cubic-bezier(0.19, 1, 0.22, 1);
@@ -214,6 +214,7 @@ body.chat-mode .messages-list {
 .row {
     display: flex;
     gap: 1rem;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
 }
 
 .flex-1 {
@@ -2356,4 +2357,252 @@ body {
     gap: 0.25rem;
     font-size: 0.75rem;
     font-weight: 800;
+}
+
+/* =====================================================
+   📱 MOBILE FIRST — Comprehensive Responsive Overhaul
+   ===================================================== */
+
+/* --- 480px and below (small phones) --- */
+@media (max-width: 480px) {
+
+    /* Setup Page — full bleed on small screens */
+    .setup-container {
+        width: 100%;
+        margin: 0;
+        padding: 1.5rem 1.25rem 2rem;
+        border-radius: 0;
+        border: none;
+        min-height: 100svh;
+        box-shadow: none;
+    }
+
+    .hero-icon svg { width: 48px; height: 48px; }
+
+    .hero h1 {
+        font-size: 1.85rem;
+        line-height: 1.2;
+    }
+
+    .hero p { font-size: 0.9rem; }
+
+    .setup-card {
+        padding: 1.1rem;
+        gap: 1.1rem;
+    }
+
+    /* Stack Style & Language selects vertically on phones */
+    .row {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .flex-1 { width: 100%; }
+
+    /* Prevent iOS auto-zoom on focus */
+    input, select, textarea {
+        font-size: 16px !important;
+        padding: 0.85rem 1rem;
+    }
+
+    .start-btn {
+        padding: 1rem;
+        font-size: 1rem;
+        border-radius: 0.85rem;
+    }
+
+    /* History */
+    .history-item { padding: 0.85rem; }
+    .history-item-info h4 { font-size: 0.9rem; }
+
+    /* Chat container */
+    .chat-container {
+        border-radius: 0;
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .header-main-row {
+        padding: 0.6rem 0.9rem;
+        min-height: 54px;
+    }
+
+    .header-text-container h2 {
+        font-size: 0.88rem;
+        max-width: 130px;
+    }
+
+    /* Messages */
+    .messages-list {
+        padding: 5rem 0.9rem 7.5rem;
+        gap: 1.1rem;
+    }
+
+    .message {
+        max-width: 93%;
+        padding: 0.9rem 1rem;
+        font-size: 0.93rem;
+    }
+
+    /* Floating Input */
+    .input-area {
+        bottom: 0.75rem;
+        width: calc(100% - 1.5rem);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 0.35rem 0.35rem 0.35rem 1.1rem;
+        border-radius: 2.5rem;
+    }
+
+    .input-area input {
+        font-size: 16px !important;
+        padding: 0.6rem 0.25rem;
+    }
+
+    .input-area button {
+        width: 2.6rem;
+        height: 2.6rem;
+        flex-shrink: 0;
+    }
+
+    /* Sidebar */
+    .progress-sidebar {
+        width: 92% !important;
+        max-width: 340px;
+    }
+
+    /* Subtopics grid */
+    .subtopics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.7rem;
+    }
+
+    .subtopic-card {
+        padding: 0.9rem 0.75rem;
+    }
+
+    .subtopic-card h4 { font-size: 0.82rem; }
+    .subtopic-card p { font-size: 0.7rem; }
+
+    .explore-continue-btn {
+        font-size: 0.95rem;
+        padding: 0.8rem 1.25rem;
+    }
+
+    /* Roadmap type */
+    .roadmap-type-btns {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.7rem;
+    }
+
+    .roadmap-type-btn { padding: 1rem 0.7rem; }
+    .roadmap-type-btn span { font-size: 1.5rem; }
+    .roadmap-type-btn h4 { font-size: 0.9rem; }
+
+    /* MCQ */
+    .mcq-option-btn {
+        padding: 0.75rem 1rem;
+        font-size: 0.88rem;
+    }
+
+    .tutor-card { padding: 0.9rem; }
+
+    .deep-dive-btn,
+    .retry-explain-btn {
+        font-size: 0.78rem;
+        padding: 0.5rem 0.7rem;
+    }
+}
+
+/* --- 768px and below (tablets + larger phones) --- */
+@media (max-width: 768px) {
+
+    .setup-container {
+        width: 100%;
+        margin: 0;
+        padding: 1.75rem 1.5rem 2.5rem;
+        border-radius: 0;
+        border: none;
+        min-height: 100svh;
+    }
+
+    .hero h1 { font-size: 2rem; }
+
+    .setup-card { padding: 1.5rem; }
+
+    /* Prevent iOS zoom */
+    input, select, textarea {
+        font-size: 16px !important;
+    }
+
+    .messages-list {
+        padding: 5.5rem 1.1rem 8rem;
+    }
+
+    .message {
+        max-width: 90%;
+        font-size: 0.95rem;
+    }
+
+    .input-area {
+        bottom: 1rem;
+        width: calc(100% - 2rem);
+    }
+
+    .App {
+        padding: 0;
+    }
+
+    .chat-container {
+        border-radius: 0;
+        border: none;
+    }
+
+    body.chat-mode .App {
+        padding: 0;
+    }
+}
+
+/* --- Minimum touch targets (all mobile) --- */
+@media (max-width: 768px) {
+
+    button {
+        min-height: 44px; /* Apple HIG minimum tap target */
+    }
+
+    .profile-trigger {
+        top: 0.65rem;
+        right: 0.9rem;
+    }
+
+    .avatar-small {
+        width: 40px;
+        height: 40px;
+    }
+
+    .progress-sidebar {
+        width: 88% !important;
+        max-width: 360px;
+        border-radius: 1.5rem 0 0 1.5rem;
+    }
+
+    .api-key-link {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .sidebar-close-btn {
+        padding: 0.6rem;
+    }
+}
+
+/* --- Fix iOS Safari 100vh issue for chat lock --- */
+@supports (-webkit-touch-callout: none) {
+    body.chat-mode {
+        height: -webkit-fill-available;
+    }
+    body.chat-mode #root,
+    body.chat-mode .App {
+        height: -webkit-fill-available;
+    }
 }
