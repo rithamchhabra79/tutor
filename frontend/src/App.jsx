@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key, Eye, EyeOff, ClipboardList, StickyNote, Download, Sparkles, Menu } from 'lucide-react';
+import { Send, BookOpen, GraduationCap, ChevronRight, Loader2, RefreshCcw, Languages, Lightbulb, CheckSquare, History, Trash2, ArrowLeft, User, Settings, LogOut, Key, Eye, EyeOff, ClipboardList, StickyNote, Download, Sparkles, Menu, X, Clock } from 'lucide-react';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,29 +28,62 @@ const Mermaid = ({ chart }) => {
     const id = useRef(`mermaid-${Math.floor(Math.random() * 1000000)}`);
 
     useEffect(() => {
-        if (chart) {
-            const renderDiagram = async () => {
+        // Configure Mermaid for current call
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark', // Force dark theme for visibility on dark background
+            themeVariables: {
+                primaryColor: '#6366f1',
+                primaryTextColor: '#fff',
+                primaryBorderColor: '#6366f1',
+                lineColor: '#6366f1',
+                secondaryColor: '#10b981',
+                tertiaryColor: '#1e293b',
+                fontFamily: 'Inter, system-ui, sans-serif'
+            }
+        });
+
+        const renderDiagram = async () => {
+            const validMermaidKeywords = ['graph', 'sequenceDiagram', 'gantt', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'pie', 'requirementDiagram', 'flowchart'];
+            const firstWord = typeof chart === 'string' ? chart.trim().split(/\s+/)[0] : '';
+            
+            if (chart && validMermaidKeywords.includes(firstWord)) {
                 try {
-                    // mermaid.render returns an object with { svg } in newer versions
                     const { svg: svgCode } = await mermaid.render(id.current, chart);
-                    // Sanitize SVG to prevent XSS
-                    const cleanSvg = DOMPurify.sanitize(svgCode, { USE_PROFILES: { svg: true } });
+                    const cleanSvg = DOMPurify.sanitize(svgCode, { 
+                        USE_PROFILES: { svg: true },
+                        ADD_TAGS: ["foreignObject", "style", "div", "span", "br", "i", "defs", "marker", "linearGradient", "stop", "path", "circle", "rect", "text", "tspan"],
+                        ADD_ATTR: ["transform", "style", "viewBox", "width", "height", "class", "id", "fill", "stroke", "d", "r", "cx", "cy", "x", "y", "dx", "dy", "text-anchor", "font-family", "font-size", "marker-end", "marker-start", "marker-mid"]
+                    });
                     setSvg(cleanSvg);
                 } catch (e) {
                     console.error("Mermaid Render Error:", e);
-                    setSvg(`<div style="color: #ef4444; font-size: 0.8rem; padding: 1rem; border: 1px dashed #ef4444; border-radius: 0.5rem;">
-                        ⚠️ Diagram syntax error.
-                    </div>`);
+                    setSvg('');
                 }
-            };
-            renderDiagram();
-        }
+            } else {
+                setSvg('');
+            }
+        };
+        renderDiagram();
     }, [chart]);
+
+    if (!svg) return null;
 
     return (
         <div 
-            className="mermaid-container" 
-            style={{ minHeight: '50px', margin: '1rem 0', display: 'flex', justifyContent: 'center', width: '100%' }}
+            className="mermaid-wrapper glass-card" 
+            style={{ 
+                margin: '1.25rem 0', 
+                padding: '1.5rem', 
+                background: 'rgba(15, 23, 42, 0.4)', 
+                borderRadius: '1rem', 
+                border: '1px solid rgba(255,255,255,0.1)', 
+                overflow: 'visible',
+                display: 'flex',
+                justifyContent: 'center',
+                width: '100%',
+                minHeight: '100px'
+            }}
             dangerouslySetInnerHTML={{ __html: svg }}
         />
     );
@@ -92,7 +126,7 @@ const UI_MESSAGES = {
 // 📋 SidebarContent — wrapped in React.memo so it ONLY re-renders
 // when sidebar-specific props change (notes, tab). NOT on typing.
 // ─────────────────────────────────────────────────────────────
-const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, setActiveSidebarTab, roadmapData, progress, autoNotes, manualNotes, setManualNotes, handleDownloadPDF, isDesktop, onClose }) {
+const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, setActiveSidebarTab, roadmapData, progress, autoNotes, manualNotes, setManualNotes, handleDownloadPDF, isDesktop, onClose, onLogout, onReset }) {
     return (
         <>
             <div className="sidebar-header">
@@ -111,10 +145,17 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                         <NoteIcon />
                         <span>Notes</span>
                     </button>
+                    <button
+                        className={`sidebar-tab ${activeSidebarTab === 'menu' ? 'active' : ''}`}
+                        onClick={() => setActiveSidebarTab('menu')}
+                    >
+                        <MenuIcon />
+                        <span>Menu</span>
+                    </button>
                 </div>
                 {!isDesktop && (
-                    <button className="close-sidebar-btn" onClick={onClose}>
-                        ✕
+                    <button className="close-sidebar-btn" onClick={onClose} title="Close Sidebar">
+                        <X size={20} />
                     </button>
                 )}
             </div>
@@ -137,12 +178,12 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                             );
                         }) || <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>No roadmap active</p>}
                     </div>
-                ) : (
+                ) : activeSidebarTab === 'notes' ? (
                     <div className="notes-panel">
                         <div className="notes-section">
-                            <div className="section-label">✨ <span>AI Auto-Notes</span></div>
+                            <div className="section-label">✨ AI Auto-Notes</div>
                             {autoNotes ? (
-                                <div className="auto-notes-display glass-card" style={{ whiteSpace: 'pre-wrap', fontSize: '0.88rem', lineHeight: 1.7 }}>{autoNotes}</div>
+                                <div className="auto-notes-display glass-card">{autoNotes}</div>
                             ) : (
                                 <div className="empty-notes glass-card">
                                     <p>AI automatically saves study notes here as you chat...</p>
@@ -150,7 +191,7 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                             )}
                         </div>
                         <div className="notes-section">
-                            <div className="section-label">📋 <span>Personal Notes</span></div>
+                            <div className="section-label">📋 Personal Notes</div>
                             <textarea
                                 className="manual-notes-area glass-card"
                                 placeholder="Apne points yahan likhein..."
@@ -160,9 +201,26 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                         </div>
                         <div className="notes-actions">
                             <button className="download-pdf-btn" onClick={handleDownloadPDF} disabled={!autoNotes && !manualNotes}>
-                                ⬇ Download PDF Notes
+                                <Download size={16} /> Download PDF Notes
                             </button>
                         </div>
+                    </div>
+                ) : (
+                    <div className="menu-panel">
+                        <button className="menu-item" onClick={onReset}>
+                            <RefreshCcw size={18} />
+                            <div className="menu-text">
+                                <span>Home (Setup)</span>
+                                <small>Naya topic start karo</small>
+                            </div>
+                        </button>
+                        <button className="menu-item logout-danger" onClick={onLogout}>
+                            <LogOut size={18} />
+                            <div className="menu-text">
+                                <span>Logout</span>
+                                <small>Sign out of your account</small>
+                            </div>
+                        </button>
                     </div>
                 )}
             </div>
@@ -173,6 +231,7 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
 // Simple icon wrappers to avoid importing inside SidebarContent
 const BookOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
 const NoteIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><polyline points="15 3 15 9 21 9"/></svg>;
+const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>;
 
 function App() {
     const [topic, setTopic] = useState('');
@@ -325,6 +384,16 @@ function App() {
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
+
+    // 🔒 Chat Mode: lock page scroll when inside chat
+    useEffect(() => {
+        if (isStarted) {
+            document.body.classList.add('chat-mode');
+        } else {
+            document.body.classList.remove('chat-mode');
+        }
+        return () => document.body.classList.remove('chat-mode');
+    }, [isStarted]);
 
     useEffect(() => {
         scrollToBottom();
@@ -532,7 +601,8 @@ function App() {
         const lastMsg = messages[messages.length - 1];
         
         // 🧪 ONLY validate if this is NOT an action button retry
-        if (!retryInput && lastMsg?.role === 'model' && lastMsg.parsed?.mastery_check) {
+        const isMcqTurn = !retryInput && lastMsg?.role === 'model' && lastMsg.parsed?.mastery_check?.options?.length > 0;
+        if (isMcqTurn) {
             const msgIndex = messages.length - 1;
             const mcq = mcqState[msgIndex];
             const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
@@ -1571,7 +1641,7 @@ Task Answer: ${finalInput}`;
                 </div>
             )}
             {/* Structural Flex Container */}
-            <div className={`chat-content-split ${isDesktop && roadmapData?.steps ? 'has-sidebar' : 'no-sidebar'}`}>
+            <div className={`chat-content-split ${isDesktop && roadmapData?.steps && showTrackSidebar ? 'has-sidebar' : 'no-sidebar'} ${showTrackSidebar ? 'sidebar-open' : 'sidebar-closed'}`}>
                 {/* 📝 Left Side: Main Column (Header + Messages + Input) */}
                 <div className="messages-container">
                     <header className="chat-header">
@@ -1582,63 +1652,42 @@ Task Answer: ${finalInput}`;
                                 </button>
                                 <div className="header-text-container">
                                     <h2 title={topic}>{topic}</h2>
-                                    <div className="header-meta">
-                                        <span className="meta-tag">{mode}</span>
-                                        <span className="meta-sep">•</span>
-                                        <span className="meta-tag">{language}</span>
-                                        {progress.total_steps > 0 && (
-                                            <>
-                                                <span className="meta-sep">•</span>
-                                                <span className="meta-progress-text">
-                                                    <span className="hide-mobile">Step </span>{progress.step}/{progress.total_steps}
-                                                    <span className="progress-percent-label"> ({Math.round((progress.step / progress.total_steps) * 100)}%)</span>
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
                                 </div>
                             </div>
 
-                            <div className="header-right">
-                                <div className="header-stats">
-                                    {streak > 1 && (
-                                        <div className="stat-badge streak-badge" title="Learning Streak">
-                                            <span>🔥 {streak}</span>
-                                        </div>
-                                    )}
-                                    <div className="stat-badge xp-badge" title="Total XP Earned">
-                                        <span>⚡ {xp}<span className="hide-mobile"> XP</span></span>
-                                    </div>
+                            <div className="header-dashboard">
+                                <div className="stat-badge xp" title="Knowledge Points">
+                                    <Sparkles size={14} />
+                                    <span>{xp} XP</span>
                                 </div>
-                                
-                                <div className="header-controls">
-                                    {roadmapData?.steps && (
-                                        <button 
-                                            className={`sidebar-toggle-btn hide-desktop ${showTrackSidebar ? 'active' : ''}`}
-                                            onClick={() => setShowTrackSidebar(!showTrackSidebar)}
-                                            title="Toggle Menu"
-                                        >
-                                            <Menu size={18} />
-                                        </button>
-                                    )}
-                                    <button onClick={resetChat} className="reset-btn" title="Start new topic">
-                                        <RefreshCcw size={18} />
-                                    </button>
+                                <div className="stat-badge steps" title="Learning Progress">
+                                    <ClipboardList size={14} />
+                                    <span>{progress.step}/{progress.total_steps}</span>
                                 </div>
+                                <div className="stat-badge hide-mobile">
+                                    <GraduationCap size={14} />
+                                    <span>{mode}</span>
+                                </div>
+                                <div className="stat-badge hide-mobile">
+                                    <Languages size={14} />
+                                    <span>{language}</span>
+                                </div>
+                            </div>
+
+                            <div className="header-controls">
+                                <button 
+                                    className={`sidebar-toggle-btn ${showTrackSidebar ? 'active' : ''}`}
+                                    onClick={() => setShowTrackSidebar(!showTrackSidebar)}
+                                    title="Toggle Dashboard"
+                                >
+                                    <Menu size={18} />
+                                    <span className="hide-mobile">Dashboard</span>
+                                </button>
                             </div>
                         </div>
-
-                        {/* 📊 Slim Progress Bar */}
-                        {progress.total_steps > 0 && (
-                            <div className="header-slim-progress">
-                                <div
-                                    className="progress-bar-fill"
-                                    style={{ width: `${Math.min(100, (progress.step / progress.total_steps) * 100)}%` }}
-                                ></div>
-                            </div>
-                        )}
                     </header>
-                    <div className="messages-list" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', padding: '1rem' }}>
+
+                    <div className="messages-list">
                         {messages.map((msg, i) => (
                             <motion.div
                                 key={i}
@@ -1675,10 +1724,14 @@ Task Answer: ${finalInput}`;
 
                     {error && (
                         <div className="chat-error-banner animate-fade-in">
-                            <span>⚠️ {error}</span>
-                            <button className="clear-error-btn" onClick={() => setError(null)}>✖</button>
+                            <span className="error-text">⚠️ {error}</span>
+                            <button className="clear-error-btn" onClick={() => setError(null)} title="Clear error">
+                                <X size={18} />
+                            </button>
                         </div>
                     )}
+
+
 
                     <form onSubmit={sendMessage} className="input-area">
                         <input
@@ -1692,8 +1745,16 @@ Task Answer: ${finalInput}`;
                             disabled={isLoading}
                         />
                         <button type="submit" disabled={isLoading || !input.trim() || cooldown > 0}>
-                            {cooldown > 0 ? <span style={{ fontSize: '0.7rem' }}>{cooldown}s</span> : <Send size={20} />}
+                            {cooldown > 0 ? (
+                                <span className="cooldown-badge">
+                                    <Clock size={14} />
+                                    {cooldown}s
+                                </span>
+                            ) : (
+                                <Send size={20} />
+                            )}
                         </button>
+
                     </form>
                 </div>
 
@@ -1711,6 +1772,8 @@ Task Answer: ${finalInput}`;
                             handleDownloadPDF={handleDownloadPDF}
                             isDesktop={true}
                             onClose={stableCloseSidebar}
+                            onLogout={handleLogout}
+                            onReset={resetChat}
                         />
                     </aside>
                 )}
@@ -1737,6 +1800,8 @@ Task Answer: ${finalInput}`;
                                     handleDownloadPDF={handleDownloadPDF}
                                     isDesktop={false}
                                     onClose={stableCloseSidebar}
+                                    onLogout={handleLogout}
+                                    onReset={resetChat}
                                 />
                             </motion.aside>
                         )}
