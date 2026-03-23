@@ -126,7 +126,31 @@ const UI_MESSAGES = {
 // 📋 SidebarContent — wrapped in React.memo so it ONLY re-renders
 // when sidebar-specific props change (notes, tab). NOT on typing.
 // ─────────────────────────────────────────────────────────────
-const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, setActiveSidebarTab, roadmapData, progress, autoNotes, manualNotes, setManualNotes, handleDownloadPDF, isDesktop, onClose, onLogout, onReset }) {
+const SidebarContent = React.memo(function SidebarContent({ 
+    activeSidebarTab, 
+    setActiveSidebarTab, 
+    roadmapData, 
+    progress, 
+    autoNotes, 
+    manualNotes, 
+    setManualNotes, 
+    handleDownloadAINotes,
+    handleDownloadManualNotes,
+    handleGenerateNotes,
+    isGeneratingNotes,
+    isDesktop, 
+    onClose, 
+    onLogout, 
+    onReset 
+}) {
+    // Local state for 'Saved' feedback
+    const [justSaved, setJustSaved] = React.useState(false);
+
+    const handleManualSave = () => {
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+    };
+
     return (
         <>
             <div className="sidebar-header">
@@ -181,7 +205,27 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                 ) : activeSidebarTab === 'notes' ? (
                     <div className="notes-panel">
                         <div className="notes-section">
-                            <div className="section-label">✨ AI Auto-Notes</div>
+                            <div className="notes-header">
+                                <div className="section-label">✨ AI Auto-Notes</div>
+                                <div className="header-actions">
+                                    <button 
+                                        className="icon-btn-text" 
+                                        onClick={handleGenerateNotes}
+                                        disabled={isGeneratingNotes}
+                                        title="Generate/Update Study Guide"
+                                    >
+                                        {isGeneratingNotes ? <Loader2 size={14} className="animate-spin" /> : '✨ Gen Guide'}
+                                    </button>
+                                    <button 
+                                        className="icon-btn" 
+                                        onClick={handleDownloadAINotes}
+                                        disabled={!autoNotes}
+                                        title="Download AI Notes"
+                                    >
+                                        <Download size={14} />
+                                    </button>
+                                </div>
+                            </div>
                             {autoNotes ? (
                                 <div className="auto-notes-display glass-card">{autoNotes}</div>
                             ) : (
@@ -190,19 +234,34 @@ const SidebarContent = React.memo(function SidebarContent({ activeSidebarTab, se
                                 </div>
                             )}
                         </div>
+
                         <div className="notes-section">
-                            <div className="section-label">📋 Personal Notes</div>
+                            <div className="notes-header">
+                                <div className="section-label">📋 Personal Notes</div>
+                                <div className="header-actions">
+                                    <button 
+                                        className={`icon-btn-text ${justSaved ? 'saved' : ''}`}
+                                        onClick={handleManualSave}
+                                        title="Save Note"
+                                    >
+                                        {justSaved ? 'Saved! ✅' : '💾 Save'}
+                                    </button>
+                                    <button 
+                                        className="icon-btn" 
+                                        onClick={handleDownloadManualNotes}
+                                        disabled={!manualNotes}
+                                        title="Download Personal Notes"
+                                    >
+                                        <Download size={14} />
+                                    </button>
+                                </div>
+                            </div>
                             <textarea
                                 className="manual-notes-area glass-card"
                                 placeholder="Apne points yahan likhein..."
                                 value={manualNotes}
                                 onChange={(e) => setManualNotes(e.target.value)}
                             />
-                        </div>
-                        <div className="notes-actions">
-                            <button className="download-pdf-btn" onClick={handleDownloadPDF} disabled={!autoNotes && !manualNotes}>
-                                <Download size={16} /> Download PDF Notes
-                            </button>
                         </div>
                     </div>
                 ) : (
@@ -280,8 +339,8 @@ function App() {
     const [showConfirm, setShowConfirm] = useState(false);
     const [showTrackSidebar, setShowTrackSidebar] = useState(false);
     const [activeSidebarTab, setActiveSidebarTab] = useState('track'); // 'track' or 'notes'
-    const [autoNotes, setAutoNotes] = useState('');
-    const [manualNotes, setManualNotes] = useState('');
+    const [autoNotes, setAutoNotes] = useState(() => localStorage.getItem('ai-tutor-auto-notes') || '');
+    const [manualNotes, setManualNotes] = useState(() => localStorage.getItem('ai-tutor-personal-notes') || '');
     const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
     const [cooldown, setCooldown] = useState(0); // ⏱️ Cooldown timer in seconds
     const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1100);
@@ -295,9 +354,18 @@ function App() {
     }, []);
 
     // Stable callbacks for SidebarContent (React.memo needs stable refs to bail out properly)
-    const stableSetManualNotes = React.useCallback((e) => setManualNotes(e.target.value), []);
+    const stableSetManualNotes = React.useCallback((val) => setManualNotes(val), []);
     const stableSetActiveSidebarTab = React.useCallback((tab) => setActiveSidebarTab(tab), []);
     const stableCloseSidebar = React.useCallback(() => setShowTrackSidebar(false), []);
+
+    // 📓 Sync Notes to LocalStorage
+    useEffect(() => {
+        localStorage.setItem('ai-tutor-auto-notes', autoNotes);
+    }, [autoNotes]);
+
+    useEffect(() => {
+        localStorage.setItem('ai-tutor-personal-notes', manualNotes);
+    }, [manualNotes]);
 
     // Load sessions and check auth status on mount
     useEffect(() => {
@@ -927,7 +995,10 @@ Task Answer: ${finalInput}`;
             });
 
             if (res.data.notes) {
-                setAutoNotes(res.data.notes);
+                // 📝 Prepend/Append based on user preference - here we append with a separator
+                const separator = "\n\n---\n\n";
+                const newNotes = autoNotes ? autoNotes + separator + res.data.notes : res.data.notes;
+                setAutoNotes(newNotes);
                 setActiveSidebarTab('notes');
             }
         } catch (err) {
@@ -937,6 +1008,35 @@ Task Answer: ${finalInput}`;
             setIsGeneratingNotes(false);
         }
     };
+
+    const downloadNotesAsPDF = (title, content) => {
+        const printWindow = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <title>${title}</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; line-height: 1.6; color: #1e293b; max-width: 800px; margin: 0 auto; background: #fff; }
+                    h1 { color: #4f46e5; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 2.2rem; margin-bottom: 25px; }
+                    .notes-content { white-space: pre-wrap; background: #f8fafc; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.1rem; }
+                    footer { margin-top: 60px; text-align: center; color: #94a3b8; font-size: 0.85rem; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+                    @media print { body { padding: 0; } }
+                </style>
+            </head>
+            <body>
+                <h1>${title}</h1>
+                <div class="notes-content">${content || 'No content found.'}</div>
+                <footer>Generated on ${new Date().toLocaleDateString()}</footer>
+                <script>window.onload = () => { setTimeout(() => { window.print(); }, 500); };</script>
+            </body>
+            </html>
+        `;
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
+    const handleDownloadAINotes = () => downloadNotesAsPDF(`AI Study Guide - ${topic}`, autoNotes);
+    const handleDownloadManualNotes = () => downloadNotesAsPDF(`My Personal Notes - ${topic}`, manualNotes);
 
     const handleDownloadPDF = () => {
         const printWindow = window.open('', '_blank');
@@ -1757,28 +1857,32 @@ Task Answer: ${finalInput}`;
 
                     </form>
                 </div>
+            </div>
 
-                {/* 🗺️ DESKTOP SIDEBAR — physical sibling, no animations, non-blocking */}
-                {isDesktop && roadmapData?.steps && (
-                    <aside className="progress-sidebar desktop-fixed">
-                        <SidebarContent
-                            activeSidebarTab={activeSidebarTab}
-                            setActiveSidebarTab={stableSetActiveSidebarTab}
-                            roadmapData={roadmapData}
-                            progress={progress}
-                            autoNotes={autoNotes}
-                            manualNotes={manualNotes}
-                            setManualNotes={stableSetManualNotes}
-                            handleDownloadPDF={handleDownloadPDF}
-                            isDesktop={true}
-                            onClose={stableCloseSidebar}
-                            onLogout={handleLogout}
-                            onReset={resetChat}
-                        />
-                    </aside>
-                )}
+            {/* 🗺️ DESKTOP SIDEBAR — moved OUTSIDE the flex container to prevent flex recalculation bugs when typing */}
+            {isDesktop && roadmapData?.steps && (
+                <aside className="progress-sidebar desktop-fixed">
+                    <SidebarContent
+                        activeSidebarTab={activeSidebarTab}
+                        setActiveSidebarTab={stableSetActiveSidebarTab}
+                        roadmapData={roadmapData}
+                        progress={progress}
+                        autoNotes={autoNotes}
+                        manualNotes={manualNotes}
+                        setManualNotes={stableSetManualNotes}
+                        handleDownloadAINotes={handleDownloadAINotes}
+                        handleDownloadManualNotes={handleDownloadManualNotes}
+                        handleGenerateNotes={handleGenerateNotes}
+                        isGeneratingNotes={isGeneratingNotes}
+                        isDesktop={true}
+                        onClose={stableCloseSidebar}
+                        onLogout={handleLogout}
+                        onReset={resetChat}
+                    />
+                </aside>
+            )}
 
-                {/* 📱 MOBILE SIDEBAR — animated overlay only on small screens */}
+            {/* 📱 MOBILE SIDEBAR — animated overlay only on small screens */}
                 {!isDesktop && (
                     <AnimatePresence>
                         {showTrackSidebar && (
@@ -1797,7 +1901,10 @@ Task Answer: ${finalInput}`;
                                     autoNotes={autoNotes}
                                     manualNotes={manualNotes}
                                     setManualNotes={stableSetManualNotes}
-                                    handleDownloadPDF={handleDownloadPDF}
+                                    handleDownloadAINotes={handleDownloadAINotes}
+                                    handleDownloadManualNotes={handleDownloadManualNotes}
+                                    handleGenerateNotes={handleGenerateNotes}
+                                    isGeneratingNotes={isGeneratingNotes}
                                     isDesktop={false}
                                     onClose={stableCloseSidebar}
                                     onLogout={handleLogout}
@@ -1808,7 +1915,6 @@ Task Answer: ${finalInput}`;
                     </AnimatePresence>
                 )}
             </div>
-        </div>
         </div>
     );
 }

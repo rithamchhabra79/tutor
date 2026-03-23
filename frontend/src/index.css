@@ -37,7 +37,6 @@ body {
 
 #root {
   width: 100%;
-  max-width: 1800px; /* Increased for better split-view utilization */
   min-height: 100%;
   overflow: visible;
 }

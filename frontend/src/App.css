@@ -16,12 +16,14 @@
     padding: 0;
 }
 
-html, body {
+html,
+body {
     margin: 0;
     padding: 0;
     min-height: 100vh;
     overflow-x: hidden;
-    overflow-y: auto; /* Explicitly allow scrolling */
+    overflow-y: auto;
+    /* Explicitly allow scrolling */
 }
 
 body {
@@ -37,11 +39,11 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
-                radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.05) 0%, transparent 50%);
+    /* Background gradients moved to body for total stability */
     position: relative;
     padding: 0;
-    overflow: visible; /* Ensure it doesn't trap scroll */
+    overflow: visible;
+    /* Ensure it doesn't trap scroll */
 }
 
 /* 🔒 CHAT MODE: Lock page to viewport, let messages scroll internally */
@@ -69,16 +71,20 @@ body.chat-mode .App {
 
 body.chat-mode .chat-container {
     flex: 1;
-    height: 0; /* Force container to respect flex parent */
+    height: 0;
+    /* Force container to respect flex parent */
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: transparent; /* Seamless integration with body background */
+    border: none;
 }
 
 body.chat-mode .messages-list {
     flex: 1;
     overflow-y: auto;
-    min-height: 0; /* Crucial for flex scroll */
+    min-height: 0;
+    /* Crucial for flex scroll */
 }
 
 .chat-container {
@@ -214,7 +220,8 @@ body.chat-mode .messages-list {
 .row {
     display: flex;
     gap: 1rem;
-    flex-wrap: wrap; /* Allow wrapping on small screens */
+    flex-wrap: wrap;
+    /* Allow wrapping on small screens */
 }
 
 .flex-1 {
@@ -360,7 +367,7 @@ body.chat-mode .messages-list {
     flex-direction: column;
     position: relative;
     backdrop-filter: blur(10px);
-    box-shadow: 0 4px 15px -5px rgba(0,0,0,0.5);
+    box-shadow: 0 4px 15px -5px rgba(0, 0, 0, 0.5);
     z-index: 10;
 }
 
@@ -538,7 +545,8 @@ body.chat-mode .messages-list {
 .messages-list {
     flex: 1;
     overflow-y: auto;
-    padding: 7rem 2rem 10rem; /* Space for floating header/footer */
+    padding: 7rem 2rem 10rem;
+    /* Space for floating header/footer */
     display: flex;
     flex-direction: column;
     gap: 2rem;
@@ -550,20 +558,21 @@ body.chat-mode .messages-list {
 
 .message-wrapper {
     display: flex;
-    width: auto; /* Changed from 100% to auto to allow align-self to work */
-    max-width: 100%;
+    width: 100%;
+    min-width: 0; /* CRITICAL: Prevent unbroken text from blowing out flex bounds */
 }
 
 .message-wrapper.user {
-    align-self: flex-end;
+    justify-content: flex-end; /* Replaced align-self to respect 100% width parent constraints */
 }
 
 .message-wrapper.model {
-    align-self: flex-start;
+    justify-content: flex-start;
 }
 
 .message {
     max-width: 85%;
+    min-width: 0; /* CRITICAL: Force shrinking below min-content for unbroken words to wrap safely */
     padding: 1.25rem 1.5rem;
     border-radius: 1.5rem;
     position: relative;
@@ -575,8 +584,15 @@ body.chat-mode .messages-list {
 }
 
 @keyframes messagePop {
-    from { opacity: 0; transform: scale(0.95) translateY(20px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .message.user {
@@ -585,7 +601,7 @@ body.chat-mode .messages-list {
     border: none;
     border-bottom-right-radius: 0.4rem;
     box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.4);
-    align-self: flex-end;
+    /* align-self handled by wrapper */
 }
 
 .message.model {
@@ -596,8 +612,9 @@ body.chat-mode .messages-list {
     border-bottom-left-radius: 0.4rem;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     position: relative;
-    border-left: 3px solid var(--primary); /* Distinguished accent */
-    align-self: flex-start;
+    border-left: 3px solid var(--primary);
+    /* Distinguished accent */
+    /* align-self handled by wrapper */
 }
 
 .tutor-icon {
@@ -714,27 +731,26 @@ body.chat-mode .messages-list {
 
 /* 🚀 ACTION HUB (Input) */
 .input-area {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(90%, 800px);
+    position: relative;
+    margin: 0 auto 2rem auto;
+    width: 100%;
+    max-width: 800px;
     background: rgba(30, 41, 59, 0.7);
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 4rem;
-    padding: 0.5rem 0.5rem 0.5rem 1.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08); /* Restored user border */
+    border-radius: 4rem; /* Restored user radius */
+    padding: 0.5rem 0.5rem 0.5rem 1.75rem; /* Restored user padding */
     display: flex;
     align-items: center;
-    gap: 1rem;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+    gap: 1rem; /* Restored user gap */
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6); /* Restored user shadow */
     z-index: 1000;
     transition: all 0.3s ease;
 }
 
 .input-area:focus-within {
-    width: min(95%, 850px);
+    /* Removed width state change to avoid the illusion that the chat is moving off-center when clicked */
     border-color: var(--primary);
     box-shadow: 0 25px 70px rgba(99, 102, 241, 0.2);
 }
@@ -746,7 +762,8 @@ body.chat-mode .messages-list {
     padding: 0.75rem 0.5rem;
     color: white;
     font-size: 1.05rem;
-    min-width: 0; /* CRITICAL: Prevent flex child from expanding parent */
+    min-width: 0;
+    /* CRITICAL: Prevent flex child from expanding parent */
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -1024,7 +1041,10 @@ th {
 }
 
 /* Ensure stages don't shrink when height is constrained */
-.setup-card, .explore-stage, .roadmap-choice-stage, .roadmap-display-stage {
+.setup-card,
+.explore-stage,
+.roadmap-choice-stage,
+.roadmap-display-stage {
     flex-shrink: 0;
 }
 
@@ -1251,9 +1271,17 @@ th {
 }
 
 @keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
+    0% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.6;
+    }
 }
 
 .roadmap-meta {
@@ -1438,7 +1466,8 @@ th {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        max-width: 160px; /* Slightly more room */
+        max-width: 160px;
+        /* Slightly more room */
     }
 
 
@@ -1748,8 +1777,7 @@ th {
     border-color: rgba(239, 68, 68, 0.4);
 }
 
-/* 📊 ROADMAP PROGRESS TRACKER (Header) */
-/* 🗺️ PROGRESS SIDEBAR — Desktop/Mobile Optimized */
+/* 🗺️ PROGRESS SIDEBAR LAYOUT */
 .chat-content-split {
     flex: 1;
     min-height: 0;
@@ -1757,6 +1785,7 @@ th {
     overflow: hidden;
     position: relative;
     width: 100%;
+    /* No justify-content: center — messages-container is flex:1 and should fill all available space */
 }
 
 .messages-container {
@@ -1767,36 +1796,16 @@ th {
     position: relative;
     width: 100%;
     min-width: 0;
-}
-
-/* 🛡️ NEXT-GEN KNOWLEDGE VAULT (SIDEBAR) */
-.chat-content-split {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
-    position: relative;
-    width: 100%;
-    justify-content: center; /* Center chat by default */
-}
-
-.messages-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+    /* Prevent flex children from overflowing */
+    max-width: 100%;
     height: 100%;
-    overflow: hidden;
-    max-width: 100%; /* Ensure it doesn't overflow */
+    transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-/* PC View: Offset messages so they don't hide behind the sidebar */
+
+/* PC View: Sidebar is position:fixed, so no padding needed.
+   messages-list max-width keeps content from hiding under it. */
 @media (min-width: 1100px) {
-    .has-sidebar .messages-container {
-        padding-right: 360px; /* Offset for fixed sidebar */
-        transition: padding 0.5s cubic-bezier(0.19, 1, 0.22, 1);
-    }
-    
     .messages-list {
         max-width: 800px;
         margin: 0 auto;
@@ -1805,10 +1814,10 @@ th {
 
 .progress-sidebar {
     width: 350px;
-    height: calc(100% - 2rem);
+    height: calc(100% - 6.5rem); /* Adjusted for new top offset */
     position: fixed;
-    right: 1rem;
-    top: 1rem;
+    right: 1.5rem; /* Slightly more edge padding */
+    top: 5.5rem; /* Moved down to prevent header overlap */
     background: rgba(15, 23, 42, 0.5);
     backdrop-filter: blur(35px) saturate(180%);
     -webkit-backdrop-filter: blur(35px) saturate(180%);
@@ -1829,7 +1838,8 @@ th {
 .sidebar-header {
     padding: 1.5rem 1.25rem 1rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    position: relative; /* For absolute close button */
+    position: relative;
+    /* For absolute close button */
 }
 
 .close-sidebar-btn {
@@ -2231,8 +2241,15 @@ th {
 }
 
 @keyframes slideUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @media (max-width: 1100px) {
@@ -2252,7 +2269,8 @@ th {
 
     .header-left {
         gap: 0.5rem;
-        flex: 1.5; /* Give more space to topic */
+        flex: 1.5;
+        /* Give more space to topic */
     }
 
     .back-btn {
@@ -2261,7 +2279,8 @@ th {
 
     .header-text-container h2 {
         font-size: 0.9rem;
-        max-width: 100px; /* Ensure truncation to leave room for stats */
+        max-width: 100px;
+        /* Ensure truncation to leave room for stats */
     }
 
     .header-meta {
@@ -2314,10 +2333,12 @@ th {
     }
 
     .progress-sidebar {
-        width: 85% !important; /* Take up most of the screen width on mobile */
+        width: 85% !important;
+        /* Take up most of the screen width on mobile */
         max-width: 320px;
         padding: 1.5rem 1rem;
         border-left: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(15, 23, 42, 0.95) !important; /* Made darker for mobile */
     }
 
     .App {
@@ -2325,8 +2346,10 @@ th {
     }
 
     .input-area {
-        margin: 0.5rem 0.5rem 0.5rem; /* Even tighter for mobile keyboard */
-        width: calc(100% - 1rem);
+        margin: 0 auto 1rem auto;
+        /* Even tighter for mobile keyboard */
+        width: 100%;
+        max-width: calc(100% - 2rem);
     }
 
     .mcq-option-btn {
@@ -2342,12 +2365,15 @@ th {
 
 /* 🌌 Global Premium Background */
 body {
-    background: radial-gradient(circle at top right, #1e293b, #0f172a 70%);
+    background: 
+        radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 50% -20%, #1e293b 0%, #0f172a 45%, #020617 100%);
     background-attachment: fixed;
 }
 
 .App {
-    background: radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.05), transparent 40%);
+    background: transparent;
 }
 
 /* ⏱️ Cooldown Timer Stylings */
@@ -2377,14 +2403,19 @@ body {
         box-shadow: none;
     }
 
-    .hero-icon svg { width: 48px; height: 48px; }
+    .hero-icon svg {
+        width: 48px;
+        height: 48px;
+    }
 
     .hero h1 {
         font-size: 1.85rem;
         line-height: 1.2;
     }
 
-    .hero p { font-size: 0.9rem; }
+    .hero p {
+        font-size: 0.9rem;
+    }
 
     .setup-card {
         padding: 1.1rem;
@@ -2397,10 +2428,14 @@ body {
         gap: 0.75rem;
     }
 
-    .flex-1 { width: 100%; }
+    .flex-1 {
+        width: 100%;
+    }
 
     /* Prevent iOS auto-zoom on focus */
-    input, select, textarea {
+    input,
+    select,
+    textarea {
         font-size: 16px !important;
         padding: 0.85rem 1rem;
     }
@@ -2412,8 +2447,13 @@ body {
     }
 
     /* History */
-    .history-item { padding: 0.85rem; }
-    .history-item-info h4 { font-size: 0.9rem; }
+    .history-item {
+        padding: 0.85rem;
+    }
+
+    .history-item-info h4 {
+        font-size: 0.9rem;
+    }
 
     /* Chat container */
     .chat-container {
@@ -2481,8 +2521,13 @@ body {
         padding: 0.9rem 0.75rem;
     }
 
-    .subtopic-card h4 { font-size: 0.82rem; }
-    .subtopic-card p { font-size: 0.7rem; }
+    .subtopic-card h4 {
+        font-size: 0.82rem;
+    }
+
+    .subtopic-card p {
+        font-size: 0.7rem;
+    }
 
     .explore-continue-btn {
         font-size: 0.95rem;
@@ -2495,9 +2540,17 @@ body {
         gap: 0.7rem;
     }
 
-    .roadmap-type-btn { padding: 1rem 0.7rem; }
-    .roadmap-type-btn span { font-size: 1.5rem; }
-    .roadmap-type-btn h4 { font-size: 0.9rem; }
+    .roadmap-type-btn {
+        padding: 1rem 0.7rem;
+    }
+
+    .roadmap-type-btn span {
+        font-size: 1.5rem;
+    }
+
+    .roadmap-type-btn h4 {
+        font-size: 0.9rem;
+    }
 
     /* MCQ */
     .mcq-option-btn {
@@ -2505,7 +2558,9 @@ body {
         font-size: 0.88rem;
     }
 
-    .tutor-card { padding: 0.9rem; }
+    .tutor-card {
+        padding: 0.9rem;
+    }
 
     .deep-dive-btn,
     .retry-explain-btn {
@@ -2526,12 +2581,18 @@ body {
         min-height: 100svh;
     }
 
-    .hero h1 { font-size: 2rem; }
+    .hero h1 {
+        font-size: 2rem;
+    }
 
-    .setup-card { padding: 1.5rem; }
+    .setup-card {
+        padding: 1.5rem;
+    }
 
     /* Prevent iOS zoom */
-    input, select, textarea {
+    input,
+    select,
+    textarea {
         font-size: 16px !important;
     }
 
@@ -2567,7 +2628,8 @@ body {
 @media (max-width: 768px) {
 
     button {
-        min-height: 44px; /* Apple HIG minimum tap target */
+        min-height: 44px;
+        /* Apple HIG minimum tap target */
     }
 
     .profile-trigger {
@@ -2584,6 +2646,7 @@ body {
         width: 88% !important;
         max-width: 360px;
         border-radius: 1.5rem 0 0 1.5rem;
+        background: rgba(15, 23, 42, 0.95) !important; /* Darker overlay for mobile */
     }
 
     .api-key-link {
@@ -2601,8 +2664,21 @@ body {
     body.chat-mode {
         height: -webkit-fill-available;
     }
+
     body.chat-mode #root,
     body.chat-mode .App {
         height: -webkit-fill-available;
     }
 }
+/*  Enhanced Notes UI */
+.notes-panel { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; }
+.notes-section { display: flex; flex-direction: column; gap: 0.75rem; }
+.notes-header { display: flex; justify-content: space-between; align-items: center; }
+.header-actions { display: flex; gap: 0.6rem; align-items: center; }
+.icon-btn, .icon-btn-text { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 0.45rem 0.75rem; border-radius: 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); display: flex; align-items: center; gap: 0.4rem; backdrop-filter: blur(8px); }
+.icon-btn:hover, .icon-btn-text:hover { background: rgba(99, 102, 241, 0.15); color: #fff; border-color: rgba(99, 102, 241, 0.4); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.icon-btn-text { font-weight: 700; color: var(--accent-light); letter-spacing: 0.02em; }
+.icon-btn-text.saved { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
+.auto-notes-display { min-height: 120px; max-height: 320px; overflow-y: auto; font-size: 0.95rem; padding: 1.25rem; line-height: 1.6; color: var(--text-main); background: rgba(15, 23, 42, 0.35); border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.06); scrollbar-width: thin; }
+.manual-notes-area { min-height: 220px; resize: vertical; width: 100%; padding: 1.25rem; font-size: 1rem; line-height: 1.6; background: rgba(15, 23, 42, 0.45); border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.06); color: var(--text-main); outline: none; transition: all 0.2s ease; }
+.manual-notes-area:focus { border-color: var(--accent-main); background: rgba(15, 23, 42, 0.6); box-shadow: 0 0 20px rgba(99, 102, 241, 0.15); }
