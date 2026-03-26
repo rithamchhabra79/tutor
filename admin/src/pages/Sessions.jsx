@@ -8,6 +8,7 @@ const SessionsList = () => {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [selectedSession, setSelectedSession] = useState(null);
+    const [selectedUser, setSelectedUser] = useState(null); // 'null' means we are in the users list view
 
     useEffect(() => {
         const fetchSessions = async () => {
@@ -23,22 +24,38 @@ const SessionsList = () => {
         fetchSessions();
     }, []);
 
-    const filteredSessions = sessions.filter(s => 
-        (s.userId?.email || '').toLowerCase().includes(search.toLowerCase()) ||
-        (s.userId?.name || '').toLowerCase().includes(search.toLowerCase()) ||
-        (s.userId?.phoneNumber || '').toLowerCase().includes(search.toLowerCase()) ||
-        s.topic.toLowerCase().includes(search.toLowerCase())
+    // Group sessions by user
+    const usersWithSessions = sessions.reduce((acc, session) => {
+        const userId = session.userId?._id || 'guest';
+        if (!acc[userId]) {
+            acc[userId] = {
+                userInfo: session.userId || { name: 'Guest', email: 'N/A', phoneNumber: 'N/A' },
+                sessions: []
+            };
+        }
+        acc[userId].sessions.push(session);
+        return acc;
+    }, {});
+
+    const userList = Object.values(usersWithSessions).sort((a, b) => {
+        // Sort by most recent session timestamp
+        const lastA = Math.max(...a.sessions.map(s => new Date(s.timestamp).getTime()));
+        const lastB = Math.max(...b.sessions.map(s => new Date(s.timestamp).getTime()));
+        return lastB - lastA;
+    });
+
+    const filteredUsers = userList.filter(u => 
+        (u.userInfo.email || '').toLowerCase().includes(search.toLowerCase()) ||
+        (u.userInfo.name || '').toLowerCase().includes(search.toLowerCase()) ||
+        (u.userInfo.phoneNumber || '').toLowerCase().includes(search.toLowerCase())
     );
 
     const renderMessageContent = (content) => {
         if (!content) return null;
         
         try {
-            // Check if it's a JSON string
             if (content.trim().startsWith('{')) {
                 const parsed = JSON.parse(content);
-                
-                // If it has tutor fields, render them nicely
                 if (parsed.explanation || parsed.redirect || parsed.analogy || parsed.task) {
                     return (
                         <div className="flex-col gap-4">
@@ -86,9 +103,7 @@ const SessionsList = () => {
                     );
                 }
             }
-        } catch (e) {
-            // Not JSON or parse error, fall back to plain text
-        }
+        } catch (e) {}
         
         return <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>;
     };
@@ -97,37 +112,94 @@ const SessionsList = () => {
         <>
             <div className="flex-col gap-6 animate-fade-in">
                 <header className="flex-between">
-                    <div>
-                        <h1 style={{ fontSize: '2.25rem', fontWeight: '800' }}>Session Logs</h1>
-                        <p style={{ color: 'var(--text-secondary)' }}>Track learning interactions</p>
+                    <div className="flex-center gap-4">
+                        {selectedUser && (
+                            <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: '0.5rem 1rem', borderRadius: '0.75rem' }}
+                                onClick={() => setSelectedUser(null)}
+                            >
+                                ← Back to Users
+                            </button>
+                        )}
+                        <div>
+                            <h1 style={{ fontSize: '2.25rem', fontWeight: '800' }}>
+                                {selectedUser ? "User Sessions" : "Session Logs"}
+                            </h1>
+                            <p style={{ color: 'var(--text-secondary)' }}>
+                                {selectedUser ? `Viewing sessions for ${selectedUser.userInfo.name}` : "Track learning interactions by user"}
+                            </p>
+                        </div>
                     </div>
-                    <div className="input-with-icon" style={{ width: '360px' }}>
-                        <Search size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Search by user, phone or topic..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="input-control"
-                        />
-                    </div>
+                    {!selectedUser && (
+                        <div className="input-with-icon" style={{ width: '360px' }}>
+                            <Search size={18} />
+                            <input 
+                                type="text" 
+                                placeholder="Search by student name, email or phone..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="input-control"
+                            />
+                        </div>
+                    )}
                 </header>
 
                 <div className="flex-col gap-4">
                     {loading ? (
                         <div className="card flex-center" style={{ padding: '6rem', color: 'var(--text-muted)' }}>
-                            Loading interaction logs...
+                            Loading interactions...
                         </div>
-                    ) : filteredSessions.length === 0 ? (
-                        <div className="card flex-center" style={{ padding: '6rem', color: 'var(--text-muted)' }}>
-                            No session activity found
-                        </div>
+                    ) : !selectedUser ? (
+                        /* User List View */
+                        filteredUsers.length === 0 ? (
+                            <div className="card flex-center" style={{ padding: '6rem', color: 'var(--text-muted)' }}>
+                                No students found with active sessions
+                            </div>
+                        ) : (
+                            filteredUsers.map((user, idx) => (
+                                <motion.div 
+                                    key={user.userInfo._id || 'guest-' + idx}
+                                    initial={{ opacity: 0, x: 10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className="card flex-between"
+                                    style={{ padding: '1.25rem 2rem', cursor: 'pointer' }}
+                                    onClick={() => setSelectedUser(user)}
+                                    whileHover={{ scale: 1.01, borderLeft: '4px solid var(--primary)' }}
+                                >
+                                    <div className="flex-center gap-4">
+                                        <div style={{ width: '3.5rem', height: '3.5rem', borderRadius: '1.25rem', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <User size={28} />
+                                        </div>
+                                        <div className="flex-col gap-1">
+                                            <h3 style={{ fontSize: '1.125rem', fontWeight: '700', textTransform: 'capitalize' }}>
+                                                {user.userInfo.name}
+                                            </h3>
+                                            <div className="flex-center gap-4" style={{ justifyContent: 'flex-start', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                <span className="flex-center gap-1"><X size={12} style={{ opacity: 0 }} /> {user.userInfo.email}</span>
+                                                <span className="flex-center gap-1">• {user.userInfo.phoneNumber}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex-center gap-8">
+                                        <div className="flex-col" style={{ alignItems: 'flex-end' }}>
+                                            <span style={{ fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Total Sessions</span>
+                                            <span style={{ fontSize: '1.25rem', fontWeight: '700' }}>{user.sessions.length}</span>
+                                        </div>
+                                        <ChevronRight style={{ color: 'var(--text-muted)' }} />
+                                    </div>
+                                </motion.div>
+                            ))
+                        )
                     ) : (
-                        filteredSessions.map((session, idx) => (
+                        /* Selected User's Sessions View */
+                        selectedUser.sessions.map((session, idx) => (
                             <motion.div 
                                 key={session._id}
-                                initial={{ opacity: 0, x: 10 }}
-                                animate={{ opacity: 1, x: 0 }}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: idx * 0.05 }}
                                 className="card flex-between"
                                 style={{ padding: '1.25rem 2rem', cursor: 'pointer' }}
@@ -135,17 +207,14 @@ const SessionsList = () => {
                                 whileHover={{ scale: 1.01, borderLeft: '4px solid var(--primary)' }}
                             >
                                 <div className="flex-center gap-4">
-                                    <div style={{ width: '3.5rem', height: '3.5rem', borderRadius: '1.25rem', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <MessageSquare size={28} />
+                                    <div style={{ width: '3rem', height: '3rem', borderRadius: '1rem', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <MessageSquare size={20} />
                                     </div>
                                     <div className="flex-col gap-1">
-                                        <h3 style={{ fontSize: '1.125rem', fontWeight: '700', textTransform: 'capitalize' }}>{session.topic}</h3>
+                                        <h3 style={{ fontSize: '1.05rem', fontWeight: '700', textTransform: 'capitalize' }}>{session.topic}</h3>
                                         <div className="flex-center gap-4" style={{ justifyContent: 'flex-start', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                            <span className="flex-center gap-1">
-                                                <User size={12} /> 
-                                                {session.userId?.name || 'Guest'} ({session.userId?.email || 'No email'}) • {session.userId?.phoneNumber || 'No phone'}
-                                            </span>
-                                            <span className="flex-center gap-1"><Calendar size={12} /> {new Date(session.timestamp).toLocaleDateString()}</span>
+                                            <span className="flex-center gap-1"><Calendar size={12} /> {new Date(session.timestamp).toLocaleString()}</span>
+                                            <span className="badge-primary" style={{ padding: '0.1rem 0.4rem', borderRadius: '0.4rem', fontSize: '0.65rem' }}>{session.mode}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -153,13 +222,9 @@ const SessionsList = () => {
                                 <div className="flex-center gap-8">
                                     <div className="flex-col" style={{ alignItems: 'flex-end' }}>
                                         <span style={{ fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Msgs</span>
-                                        <span style={{ fontSize: '1.25rem', fontWeight: '700' }}>{session.messages?.length || 0}</span>
+                                        <span style={{ fontSize: '1.1rem', fontWeight: '700' }}>{session.messages?.length || 0}</span>
                                     </div>
-                                    <div className="flex-col" style={{ alignItems: 'flex-end' }}>
-                                        <span style={{ fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Mode</span>
-                                        <span className="badge-primary" style={{ padding: '0.2rem 0.5rem', borderRadius: '0.5rem', fontSize: '0.7rem' }}>{session.mode}</span>
-                                    </div>
-                                    <ChevronRight style={{ color: 'var(--text-muted)' }} />
+                                    <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
                                 </div>
                             </motion.div>
                         ))
@@ -167,7 +232,7 @@ const SessionsList = () => {
                 </div>
             </div>
 
-            {/* Session Detail Modal — Moved outside the animated container to fix fixed positioning */}
+            {/* Session Detail Modal */}
             <AnimatePresence>
                 {selectedSession && (
                     <motion.div 
@@ -175,18 +240,10 @@ const SessionsList = () => {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         style={{ 
-                            position: 'fixed', 
-                            top: 0, 
-                            left: 0, 
-                            right: 0, 
-                            bottom: 0, 
-                            background: 'rgba(0,0,0,0.85)', 
-                            backdropFilter: 'blur(10px)', 
-                            zIndex: 9999, 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center', 
-                            padding: '1.5rem' 
+                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+                            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', 
+                            zIndex: 9999, display: 'flex', alignItems: 'center', 
+                            justifyContent: 'center', padding: '1.5rem' 
                         }}
                         onClick={() => setSelectedSession(null)}
                     >
@@ -196,11 +253,8 @@ const SessionsList = () => {
                             exit={{ scale: 0.95, opacity: 0, y: 20 }}
                             className="card flex-col"
                             style={{ 
-                                width: '100%', 
-                                maxWidth: '900px', 
-                                maxHeight: '90vh', 
-                                padding: 0, 
-                                overflow: 'hidden',
+                                width: '100%', maxWidth: '900px', maxHeight: '90vh', 
+                                padding: 0, overflow: 'hidden',
                                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
                                 border: '1px solid rgba(255, 255, 255, 0.1)'
                             }}
@@ -210,7 +264,7 @@ const SessionsList = () => {
                                 <div className="flex-col gap-1">
                                     <h2 style={{ fontSize: '1.25rem', fontWeight: '800', textTransform: 'capitalize' }}>{selectedSession.topic}</h2>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                        Student: {selectedSession.userId?.name || 'Guest'} • {selectedSession.userId?.email || 'N/A'} • {selectedSession.userId?.phoneNumber || 'N/A'}
+                                        {selectedSession.userId?.name || 'Guest'} • {new Date(selectedSession.timestamp).toLocaleString()}
                                     </p>
                                 </div>
                                 <button className="btn btn-secondary" style={{ padding: '0.5rem', width: '2rem', height: '2rem' }} onClick={() => setSelectedSession(null)}>
@@ -234,9 +288,7 @@ const SessionsList = () => {
                                                 borderRadius: msg.role === 'user' ? '1.25rem 1.25rem 0 1.25rem' : '1.25rem 1.25rem 1.25rem 0',
                                                 background: msg.role === 'user' ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
                                                 border: msg.role === 'user' ? 'none' : '1px solid var(--border-medium)',
-                                                color: 'white',
-                                                fontSize: '0.9rem',
-                                                lineHeight: '1.6',
+                                                color: 'white', fontSize: '0.9rem', lineHeight: '1.6',
                                                 boxShadow: msg.role === 'user' ? '0 10px 15px -3px rgba(99, 102, 241, 0.3)' : 'none'
                                             }}>
                                                 {renderMessageContent(msg.content)}
