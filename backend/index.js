@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import mongoSanitize from 'express-mongo-sanitize';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -51,8 +50,24 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // Security Middlewares
 app.use(helmet());
 app.use(cors());
-app.use(express.json({ limit: '10kb' })); // Limit body size to prevent DoS
-app.use(mongoSanitize()); // Prevent NoSQL Injection
+app.use(express.json({ limit: '10kb' })); 
+
+// 🛡️ Custom NoSQL Sanitizer for Express 5 (req.query is a read-only getter)
+const sanitizeBody = (req, res, next) => {
+    const clean = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        Object.keys(obj).forEach(key => {
+            if (key.startsWith('$') || key.includes('.')) {
+                delete obj[key];
+            } else if (typeof obj[key] === 'object') {
+                clean(obj[key]);
+            }
+        });
+    };
+    if (req.body) clean(req.body);
+    next();
+};
+app.use(sanitizeBody); 
 
 // Rate Limiting for Auth Routes
 const authLimiter = rateLimit({
