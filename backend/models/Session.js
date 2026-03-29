@@ -16,8 +16,22 @@ const sessionSchema = new mongoose.Schema({
   xp: { type: Number, default: 0 },
   streak: { type: Number, default: 0 },
   roadmapData: { type: Object, default: null },
+  roadmapType: { type: String, default: 'full' }, // 🗺️ Essential for resume
   autoNotes: { type: String, default: '' },
   manualNotes: { type: String, default: '' },
+  selectedBook: { type: Object, default: null }, // 📚 Full Course specific
+  courseContext: {
+    semester: { type: Number, default: null },
+    bookTitle: { type: String, default: '' },
+    chapterNumber: { type: Number, default: null },
+    chapterTitle: { type: String, default: '' },
+    topicName: { type: String, default: '' },
+    isFullCourse: { type: Boolean, default: false }
+  },
+  courseMeta: {
+    structure: { type: Object, default: null },
+    bookIndices: { type: Object, default: {} } // { [bookTitle]: indexData }
+  },
   timestamp: { type: Number, default: Date.now }
 });
 

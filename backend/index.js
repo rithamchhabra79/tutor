@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import mongoSanitize from 'express-mongo-sanitize';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,7 +16,7 @@ import { requireAuth } from './middleware/auth.js';
 import { isAdmin } from './middleware/admin.js';
 import jwt from 'jsonwebtoken';
 import { executeWithAutoSwitch, MODELS, wait } from './utils/gemini.js';
-import { SYSTEM_INSTRUCTIONS, getExplorePrompt, getRoadmapPrompt, getSummaryPrompt, getNotesPrompt } from './utils/prompts.js';
+import { SYSTEM_INSTRUCTIONS, getExplorePrompt, getRoadmapPrompt, getSummaryPrompt, getNotesPrompt, getCourseStructurePrompt, getBookIndexPrompt } from './utils/prompts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,13 +51,23 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // Security Middlewares
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10kb' })); // Limit body size to prevent DoS
+app.use(mongoSanitize()); // Prevent NoSQL Injection
 
 // Rate Limiting for Auth Routes
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per windowMs
     message: { error: "Too many requests from this IP, please try again after 15 minutes" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// General API Rate Limiting (Protection against abuse/costs)
+const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 50, // 50 requests per minute
+    message: { error: "Too many requests. AI needs a 1-minute break!" },
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -68,9 +79,16 @@ const authLimiter = rateLimit({
 // Register
 app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
-        const { name, email, phoneNumber, password } = req.body;
+        let { name, email, phoneNumber, password } = req.body;
+        
+        // --- 🛡️ HARDENING: Explicit String Casting ---
+        name = String(name || '').trim();
+        email = String(email || '').toLowerCase().trim();
+        phoneNumber = String(phoneNumber || '').trim();
+        password = String(password || '');
+
         if (!name || !email || !phoneNumber || !password) {
-            return res.status(400).json({ error: "All fields (name, email, phone, password) are required" });
+            return res.status(400).json({ error: "All fields are required" });
         }
 
         const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
@@ -93,7 +111,12 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 // Login
 app.post('/api/auth/login', authLimiter, async (req, res) => {
     try {
-        const { identifier, password } = req.body; // identifier can be email or phoneNumber
+        let { identifier, password } = req.body;
+        
+        // --- 🛡️ HARDENING: Explicit String Casting ---
+        identifier = String(identifier || '').toLowerCase().trim();
+        password = String(password || '');
+
         if (!identifier || !password) return res.status(400).json({ error: "Identifier and password required" });
 
         const user = await User.findOne({
@@ -326,10 +349,74 @@ app.post('/api/roadmap', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// AI TUTOR ROUTE (Auth-Protected)
+// FULL COURSE ENDPOINTS (Auth-Protected)
 // ==========================================
-app.post('/api/tutor', requireAuth, async (req, res) => {
-    const { message, history, mode, language } = req.body;
+
+// 1. Get Course Structure (Semesters & Books)
+app.post('/api/course/structure', requireAuth, async (req, res) => {
+    const { topic, language } = req.body;
+    if (!topic) return res.status(400).json({ error: 'Topic is required' });
+    const apiKey = decrypt(req.user.encryptedApiKey);
+    if (!apiKey) return res.status(401).json({ error: 'API key missing' });
+
+    try {
+        const prompt = getCourseStructurePrompt(topic, language);
+        const { result } = await executeWithAutoSwitch(
+            apiKey,
+            'course-structure',
+            {},
+            async (model) => await model.generateContent(prompt)
+        );
+
+        let text = result.response.text().trim();
+        if (text.includes('```')) {
+            const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (match) text = match[1].trim();
+        }
+        res.json(JSON.parse(text));
+    } catch (err) {
+        console.error('Course Structure Error:', err);
+        res.status(500).json({ error: 'Failed to generate course structure' });
+    }
+});
+
+// 2. Get Book Index (Chapters & Topics)
+app.post('/api/course/book-index', requireAuth, async (req, res) => {
+    const { bookTitle, topic, language } = req.body;
+    if (!bookTitle || !topic) return res.status(400).json({ error: 'Book title and topic are required' });
+    const apiKey = decrypt(req.user.encryptedApiKey);
+    if (!apiKey) return res.status(401).json({ error: 'API key missing' });
+
+    try {
+        const prompt = getBookIndexPrompt(bookTitle, topic, language);
+        const { result } = await executeWithAutoSwitch(
+            apiKey,
+            'course-book-index',
+            {},
+            async (model) => await model.generateContent(prompt)
+        );
+
+        let text = result.response.text().trim();
+        if (text.includes('```')) {
+            const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (match) text = match[1].trim();
+        }
+        res.json(JSON.parse(text));
+    } catch (err) {
+        console.error('Book Index Error:', err);
+        res.status(500).json({ error: 'Failed to generate book index' });
+    }
+});
+
+// AI TUTOR ROUTE (Auth-Protected + Rate-Limited)
+// ==========================================
+app.post('/api/tutor', requireAuth, apiLimiter, async (req, res) => {
+    let { message, history, mode, language } = req.body;
+
+    // --- 🛡️ HARDENING: Sanitization ---
+    message = String(message || '').substring(0, 5000); // Prevent Oversized Prompts
+    language = String(language || 'English').substring(0, 20);
+    mode = String(mode || 'beginner').substring(0, 20);
 
     if (!req.user.encryptedApiKey) {
         return res.status(401).json({ error: "Gemini API Key is missing. Please save it in your settings." });
@@ -375,11 +462,11 @@ app.post('/api/tutor', requireAuth, async (req, res) => {
             console.log(`📊 (Model: ${modelUsed}) Tokens → Input: ${usage.promptTokenCount}, Output: ${usage.candidatesTokenCount}, Total: ${usage.totalTokenCount}`);
         }
 
-        // JSON parse karo — fallback with raw text agar parse fail ho
+        // 🧹 JSON parse karo — Robust cleaning logic
         let parsed = null;
         let cleanText = text.trim();
 
-        // Robust extraction: find the first { and the last }
+        // 1. Gritty Brute Force Extract: First { to Last }
         const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             cleanText = jsonMatch[0];
@@ -387,13 +474,25 @@ app.post('/api/tutor', requireAuth, async (req, res) => {
 
         try {
             parsed = JSON.parse(cleanText);
-            console.log(`✅ JSON parsed — concept: "${parsed?.progress?.current_concept}", step: ${parsed?.progress?.step}/${parsed?.progress?.total_steps}`);
+            console.log(`✅ JSON parsed (Model: ${modelUsed}) — concept: "${parsed?.progress?.current_concept}"`);
         } catch (parseErr) {
-            console.warn('⚠️ JSON parse failed:', parseErr.message);
-            console.warn('Raw text:', text.substring(0, 100) + '...');
+            console.error('❌ JSON parse failed after cleaning. Error:', parseErr.message);
+            console.log('--- Failed JSON Content Snippet ---\n', cleanText.substring(0, 500), '\n----------------------------------');
+            
+            // 🛠️ HEURISTIC RECOVERY: If it's just missing a closing bracket (common for short tokens)
+            if (cleanText.startsWith('{') && !cleanText.endsWith('}')) {
+                try {
+                    parsed = JSON.parse(cleanText + '}');
+                    console.log("🛠️ Recovered via appended '}'");
+                } catch (e) { /* give up */ }
+            }
         }
 
-        res.json({ message: cleanText || text, parsed });
+        // 📤 If parsed is successful, we prefer sending the explanation as the primary message
+        // This ensures that even if a component doesn't use the 'parsed' object, it sees clean text.
+        const finalDisplayMsg = parsed?.explanation || (parsed ? "Data generated successfully." : cleanText || text);
+
+        res.json({ message: finalDisplayMsg, parsed });
     } catch (error) {
         console.error("Gemini Error:", error);
         if (error.status === 429 || error.message?.includes('429')) {
@@ -506,10 +605,47 @@ app.post('/api/notes/generate', requireAuth, async (req, res) => {
 // Get all users
 app.get('/api/admin/users', requireAuth, isAdmin, async (req, res) => {
     try {
-        const users = await User.find({}, '-password -encryptedApiKey');
-        res.json(users);
+        const users = await User.find({}, '-password').lean();
+        const usersWithKeyStatus = users.map(u => ({
+            ...u,
+            hasApiKey: !!u.encryptedApiKey,
+            encryptedApiKey: undefined
+        }));
+        res.json(usersWithKeyStatus);
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// Delete user
+app.get('/api/admin/stats', requireAuth, isAdmin, async (req, res) => {
+    try {
+        const [totalUsers, totalSessions, recentUsers] = await Promise.all([
+            User.countDocuments(),
+            Session.countDocuments(),
+            User.find({}, '-password').sort({ createdAt: -1 }).limit(5).lean()
+        ]);
+
+        const sessions = await Session.find({}, 'messages').lean();
+        const totalMessages = sessions.reduce((acc, s) => acc + (s.messages?.length || 0), 0);
+        const avgSessionLength = totalSessions > 0 ? Math.round(totalMessages / totalSessions) : 0;
+
+        const stats = {
+            totalUsers,
+            totalSessions,
+            totalMessages,
+            avgSessionLength,
+            recentUsers: recentUsers.map(u => ({
+                ...u,
+                hasApiKey: !!u.encryptedApiKey,
+                encryptedApiKey: undefined
+            }))
+        };
+
+        res.json(stats);
+    } catch (err) {
+        console.error("Dashboard Stats Error:", err);
+        res.status(500).json({ error: 'Failed to fetch dashboard stats' });
     }
 });
 

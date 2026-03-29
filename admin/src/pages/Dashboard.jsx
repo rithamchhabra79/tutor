@@ -1,24 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { getUsers, getSessions } from '../api/admin';
+import { getDashboardStats } from '../api/admin';
 import { Users, MessageSquare, Award, Clock, ArrowUpRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Dashboard = () => {
-    const [stats, setStats] = useState({ users: 0, sessions: 0, totalMessages: 0 });
+    const [stats, setStats] = useState({ 
+        totalUsers: 0, 
+        totalSessions: 0, 
+        totalMessages: 0, 
+        avgSessionLength: 0,
+        recentUsers: [] 
+    });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const [usersRes, sessionsRes] = await Promise.all([getUsers(), getSessions()]);
-                const sessions = sessionsRes.data;
-                const totalMsg = sessions.reduce((acc, s) => acc + (s.messages?.length || 0), 0);
-                
-                setStats({
-                    users: usersRes.data.length,
-                    sessions: sessions.length,
-                    totalMessages: totalMsg
-                });
+                const { data } = await getDashboardStats();
+                setStats(data);
             } catch (err) {
                 console.error("Failed to fetch dashboard stats", err);
             } finally {
@@ -29,10 +28,10 @@ const Dashboard = () => {
     }, []);
 
     const cards = [
-        { title: 'Total Users', value: stats.users, icon: Users, color: 'var(--primary)' },
-        { title: 'Sessions', value: stats.sessions, icon: MessageSquare, color: 'var(--accent-amber)' },
+        { title: 'Total Users', value: stats.totalUsers, icon: Users, color: 'var(--primary)' },
+        { title: 'Sessions', value: stats.totalSessions, icon: MessageSquare, color: 'var(--accent-amber)' },
         { title: 'Interactions', value: stats.totalMessages, icon: Award, color: 'var(--accent-emerald)' },
-        { title: 'Avg Length', value: stats.sessions ? Math.round(stats.totalMessages / stats.sessions) : 0, icon: Clock, color: 'var(--primary-light)' },
+        { title: 'Avg Length', value: stats.avgSessionLength, icon: Clock, color: 'var(--primary-light)' },
     ];
 
     return (
@@ -71,16 +70,22 @@ const Dashboard = () => {
                 <div className="card">
                     <h3 style={{ fontSize: '1.25rem', fontWeight: '700', marginBottom: '1.5rem' }}>Recent Users</h3>
                     <div className="flex-col gap-3">
-                        {[1, 2, 3].map((_, i) => (
-                            <div key={i} className="flex-between" style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '1rem', border: '1px solid var(--border-light)' }}>
+                        {stats.recentUsers?.length === 0 ? (
+                            <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>No recent users</p>
+                        ) : stats.recentUsers?.map((user) => (
+                            <div key={user._id} className="flex-between" style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '1rem', border: '1px solid var(--border-light)' }}>
                                 <div className="flex-center gap-3">
-                                    <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'linear-gradient(45deg, var(--primary), var(--accent-emerald))' }}></div>
+                                    <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', background: 'linear-gradient(45deg, var(--primary), var(--accent-emerald))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                                        {user.name?.[0].toUpperCase() || 'U'}
+                                    </div>
                                     <div>
-                                        <p style={{ fontWeight: '600', fontSize: '0.9rem' }}>User #{1000 + i}</p>
-                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Joined yesterday</p>
+                                        <p style={{ fontWeight: '600', fontSize: '0.9rem' }}>{user.name}</p>
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(user.createdAt).toLocaleDateString()}</p>
                                     </div>
                                 </div>
-                                <div className="badge-primary">NEW</div>
+                                <div className={`badge ${user.hasApiKey ? 'badge-success' : 'badge-primary'}`} style={{ fontSize: '0.6rem' }}>
+                                    {user.hasApiKey ? 'KEY OK' : 'NO KEY'}
+                                </div>
                             </div>
                         ))}
                     </div>

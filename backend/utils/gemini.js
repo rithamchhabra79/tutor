@@ -11,7 +11,7 @@ export const MODELS = {
 
 // Model selection based on task
 export const getModelForTask = (taskType, roadmapType = null, mode = null) => {
-    if (taskType === 'roadmap' && (roadmapType === 'master' || roadmapType === 'advance')) {
+    if (taskType === 'roadmap' || taskType === 'course-structure' || taskType === 'course-book-index') {
         return MODELS.LOGIC;
     }
     if (taskType === 'tutor' && mode === 'deep') {
@@ -21,25 +21,36 @@ export const getModelForTask = (taskType, roadmapType = null, mode = null) => {
     return MODELS.PRIMARY;
 };
 
-// Fallback chain definition
-const FALLBACK_CHAIN = {
-    [MODELS.PRIMARY]: [MODELS.FALLBACK_1, MODELS.FALLBACK_2, MODELS.SAFETY_NET],
-    [MODELS.LOGIC]: [MODELS.FALLBACK_1, MODELS.SAFETY_NET],
-};
+// Note: Fallback chain is now handled dynamically in executeWithAutoSwitch
 
 /**
- * Execute a call with automatic failover
+ * Execute a call with automatic failover (Upgraded)
+ * Tries the primary model first, then exhausts all other models if "busy" or "limited"
  */
 export const executeWithAutoSwitch = async (apiKey, taskType, params, executeFn) => {
     const { roadmapType, mode, systemInstruction, generationConfig } = params;
-    let currentModelName = getModelForTask(taskType, roadmapType, mode);
-    let attempts = [currentModelName, ...(FALLBACK_CHAIN[currentModelName] || [])];
+    
+    // 1. Determine the best starting model
+    const primaryChoice = getModelForTask(taskType, roadmapType, mode);
+    
+    // 2. Build a full exhaustive list: [Primary Choice, then all others in priority order]
+    // Priority order: FLASH -> LOGIC -> FB1 -> FB2 -> SAFETY
+    const allModelsPriority = [
+        MODELS.PRIMARY, 
+        MODELS.LOGIC, 
+        MODELS.FALLBACK_1, 
+        MODELS.FALLBACK_2, 
+        MODELS.SAFETY_NET
+    ];
+    
+    // Filter duplicates and put primaryChoice at the front
+    let attempts = [primaryChoice, ...allModelsPriority.filter(m => m !== primaryChoice)];
     
     let lastError = null;
 
     for (const modelName of attempts) {
         try {
-            console.log(`🤖 Attempting request with model: ${modelName}`);
+            console.log(`🤖 Attempting [${taskType}] with model: ${modelName}`);
             const genAI = new GoogleGenerativeAI(apiKey);
             const model = genAI.getGenerativeModel({ 
                 model: modelName,
@@ -48,24 +59,44 @@ export const executeWithAutoSwitch = async (apiKey, taskType, params, executeFn)
             });
             
             // Execute the provided function with the selected model
-            const result = await executeFn(model);
-            console.log(`✅ Success using ${modelName}`);
+            // Add a timeout fallback for hanging requests
+            const result = await Promise.race([
+                executeFn(model),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Model request timeout")), 30000))
+            ]);
+
+            console.log(`✅ Success using ${modelName} for ${taskType}`);
             return { result, modelUsed: modelName };
         } catch (error) {
             lastError = error;
-            const isRateLimit = error.status === 429 || error.message?.includes('429');
-            const isQuotaExceeded = error.message?.includes('Quota exceeded');
-            
-            if (isRateLimit || isQuotaExceeded) {
-                console.warn(`⚠️ Model ${modelName} hit limit. Switching to fallback...`);
-                continue; // Try next model in chain
+            const errorMsg = error.message?.toLowerCase() || "";
+            const status = error.status;
+
+            // Broad check for "Busy" or "Limited" states
+            const isBusy = 
+                status === 429 || status === 500 || status === 503 ||
+                errorMsg.includes('429') || errorMsg.includes('500') || errorMsg.includes('503') ||
+                errorMsg.includes('quota exceeded') || 
+                errorMsg.includes('busy') || 
+                errorMsg.includes('overloaded') || 
+                errorMsg.includes('capacity') ||
+                errorMsg.includes('timeout') ||
+                errorMsg.includes('service_unavailable');
+
+            if (isBusy) {
+                console.warn(`⚠️ Model ${modelName} is busy/limited: "${error.message}". Switching to next available...`);
+                continue; // Try next model in exhaustive list
             } else {
-                // For logic errors or auth errors, throw immediately
-                throw error;
+                // If it's a safety block or auth error, we might still want to try another model 
+                // as different models have different filters, but for now we fallback on almost anything 
+                // that isn't a clear developer error.
+                console.warn(`⏳ Model ${modelName} failed with: "${error.message}". Retrying with fallback...`);
+                continue;
             }
         }
     }
 
+    console.error("❌ ALL models failed. Final error:", lastError.message);
     throw lastError || new Error("All models failed to respond.");
 };
 

@@ -19,6 +19,7 @@ export const login = (identifier, password) => adminApi.post('/auth/login', { id
 export const getUsers = () => adminApi.get('/admin/users');
 export const deleteUser = (id) => adminApi.delete(`/admin/users/${id}`);
 export const getSessions = () => adminApi.get('/admin/sessions');
+export const getDashboardStats = () => adminApi.get('/admin/stats');
 export const checkMe = () => adminApi.get('/auth/me');
 
 export default adminApi;

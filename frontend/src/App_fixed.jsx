@@ -12,13 +12,8 @@ import {
 } from 'recharts';
 import './App.css';
 
-// 🎓 Modular components
-import CourseStructure from './components/CourseStructure';
-import BookIndex from './components/BookIndex';
-import TutorSession from './components/TutorSession';
-
 // 📊 Visual Mode Component (Charts & SVG)
-const VisualMode = ({ content }) => {
+const VisualMode = React.memo(({ content }) => {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
     useEffect(() => {
@@ -29,8 +24,10 @@ const VisualMode = ({ content }) => {
 
     const chartHeight = isMobile ? 300 : 400;
 
+    if (!content) return null;
+    
+    // 1. Handle JSON visualization (e.g. { "type": "pie", "data": [...] })
     try {
-        // Try to parse as JSON for Charts
         if (content.trim().startsWith('{')) {
             const data = JSON.parse(content);
             const title = data.title || "Visual Data";
@@ -52,11 +49,11 @@ const VisualMode = ({ content }) => {
                                         contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)' }}
                                         itemStyle={{ color: '#818cf8', fontWeight: 600 }}
                                     />
-                                    <Bar dataKey="value" fill="url(#colorBarSmall)" radius={[6, 6, 0, 0]} barSize={isMobile ? 25 : 40}>
+                                    <Bar dataKey="value" fill="url(#colorBarFixed)" radius={[6, 6, 0, 0]} barSize={isMobile ? 25 : 40}>
                                         <Cell fill="#6366f1" />
                                     </Bar>
                                     <defs>
-                                        <linearGradient id="colorBarSmall" x1="0" y1="0" x2="0" y2="1">
+                                        <linearGradient id="colorBarFixed" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
                                             <stop offset="95%" stopColor="#818cf8" stopOpacity={0.2}/>
                                         </linearGradient>
@@ -136,7 +133,7 @@ const VisualMode = ({ content }) => {
                             <ResponsiveContainer width="100%" height="100%" debounce={100}>
                                 <AreaChart data={chartData}>
                                     <defs>
-                                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                                        <linearGradient id="colorValueFixed" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
                                             <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
                                         </linearGradient>
@@ -147,7 +144,7 @@ const VisualMode = ({ content }) => {
                                     <Tooltip 
                                         contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                                     />
-                                    <Area type="monotone" dataKey="value" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorValue)" strokeWidth={3} />
+                                    <Area type="monotone" dataKey="value" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorValueFixed)" strokeWidth={3} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
@@ -156,7 +153,6 @@ const VisualMode = ({ content }) => {
             }
         }
 
-        // Check if it's raw SVG
         if (content.trim().startsWith('<svg')) {
             const cleanSvg = DOMPurify.sanitize(content, {
                 USE_PROFILES: { svg: true },
@@ -171,7 +167,7 @@ const VisualMode = ({ content }) => {
                 .replace(/<svg([^>]*?)\s+style="[^"]*"/gi, '<svg$1');
 
             if (!finalSvg.includes('viewBox')) {
-                // Fallback viewBox if missing
+                // Fallback viewBox if missing (assumes standard 800x400 if not specified)
                 finalSvg = finalSvg.replace('<svg', '<svg viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet"');
             }
             finalSvg = finalSvg.replace('<svg', '<svg width="100%" height="auto" style="max-height: 500px;"');
@@ -189,11 +185,132 @@ const VisualMode = ({ content }) => {
         console.error("Visual Mode Parse Error:", e);
     }
     return <pre className="raw-visual-code"><code>{content}</code></pre>;
-};
+});
 
 
-// 📋 Quick Mode Component (Tables & Emphasis)
-const QuickMode = ({ children }) => {
+// 🎓 Course Structure Component (Memoized for performance)
+const CourseStructureView = React.memo(({ courseData, topic, onBack, onBookSelect }) => {
+    return (
+        <div className="course-structure-stage glass-card">
+            <div className="course-header mb-6" style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+                <button className="back-btn" onClick={onBack}>
+                    <ArrowLeft size={18} />
+                </button>
+                <div style={{ flex: 1 }}>
+                    <h3 style={{ margin: 0 }}>🎓 {topic}</h3>
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Select a book to start learning</p>
+                </div>
+                {courseData && (
+                    <button 
+                        className="quick-start-btn glass-card"
+                        style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                        onClick={() => {
+                            const sem1 = courseData.semesters[0];
+                            if (sem1 && sem1.books && sem1.books[0]) {
+                                onBookSelect(sem1.books[0]);
+                            }
+                        }}
+                    >
+                        ⚡ Start from Sem 1
+                    </button>
+                )}
+            </div>
+            <div className="semesters-list">
+                {courseData?.semesters?.map((sem, i) => (
+                    <div key={i} className="semester-section mb-6">
+                        <h4 className="semester-title">📅 Semester {sem.semester}</h4>
+                        <div className="books-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                            {sem.books?.map((book, bi) => (
+                                <motion.button
+                                    key={bi}
+                                    className="book-card"
+                                    onClick={() => onBookSelect(book)}
+                                    whileHover={{ y: -5 }}
+                                    style={{ display: 'flex', gap: '1rem', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', width: '100%' }}
+                                >
+                                    <span style={{ fontSize: '2.5rem' }}>{book.emoji || '📚'}</span>
+                                    <div style={{ overflow: 'hidden' }}>
+                                        <h5>{book.title}</h5>
+                                        <p>{book.description}</p>
+                                    </div>
+                                </motion.button>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+});
+
+// 🎓 Course Index Component (Memoized for performance)
+const CourseIndexView = React.memo(({ bookIndex, selectedBook, onBack, onStartTopic, isLoading }) => {
+    return (
+        <div className="course-index-stage glass-card">
+            <div className="course-header mb-6" style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+                <button className="back-btn" onClick={onBack}>
+                    <ArrowLeft size={18} />
+                </button>
+                <div style={{ flex: 1 }}>
+                    <h3 style={{ margin: 0 }}>📖 {selectedBook?.title}</h3>
+                    <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Choose a topic to begin tutoring</p>
+                </div>
+                <button 
+                    className="start-from-beg-btn glass-card"
+                    style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    onClick={() => {
+                        const firstCh = bookIndex?.chapters?.[0];
+                        const firstTopic = firstCh?.topics?.[0];
+                        if (firstCh && firstTopic) {
+                            onStartTopic(firstCh, firstTopic);
+                        }
+                    }}
+                    disabled={isLoading}
+                >
+                    🚀 Start from Chapter 1
+                </button>
+            </div>
+            <div className="chapters-list">
+                {bookIndex?.chapters?.map((ch, i) => (
+                    <div key={i} className="chapter-item mb-4" style={{ padding: '1.5rem' }}>
+                        <div className="chapter-header" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+                            <span style={{ background: 'var(--primary)', color: 'white', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 'bold', boxShadow: '0 0 15px var(--primary-glow)' }}>{ch.chapter_number}</span>
+                            <h4>{ch.chapter_title}</h4>
+                        </div>
+                        <div className="topics-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
+                            {ch.topics?.map((t, ti) => {
+                                // Linear Learning Enforcement: Only enable if it's the very first topic, or if there's progress (simplified for now)
+                                const isFirstTopicOverall = i === 0 && ti === 0;
+                                return (
+                                    <button
+                                        className="topic-select-btn"
+                                        onClick={() => onStartTopic(ch, t)}
+                                        disabled={!isFirstTopicOverall && !selectedBook.hasProgress}
+                                        style={{ 
+                                            padding: '1rem', 
+                                            borderRadius: '12px', 
+                                            textAlign: 'left', 
+                                            fontSize: '0.95rem',
+                                            fontWeight: isFirstTopicOverall ? '700' : '500'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                            <span style={{ opacity: isFirstTopicOverall ? 1 : 0.5 }}>{isFirstTopicOverall ? '✨' : '🔹'}</span>
+                                            <span>{t}</span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+});
+
+// 📋 Quick Mode Component (Memoized for performance)
+const QuickMode = React.memo(({ children }) => {
     return (
         <div className="quick-container glass-card mb-4">
             <div className="visual-header mb-2">
@@ -204,7 +321,7 @@ const QuickMode = ({ children }) => {
             </div>
         </div>
     );
-};
+});
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API_URL = `${BASE_URL}/api/tutor`;
@@ -232,8 +349,8 @@ const randomizeMCQ = (p) => {
 
 const UI_MESSAGES = {
     English: {
-        quota: "🚫 Daily AI Quota reached. Please try again tomorrow or check your API Key.",
-        busy: "⚠️ AI is busy. Please retry in 5 seconds.",
+        quota: "ðŸš« Daily AI Quota reached. Please try again tomorrow or check your API Key.",
+        busy: "âš ï¸ AI is busy. Please retry in 5 seconds.",
         generic_error: "Fail to load. Please try again.",
         mcq_missing: "Please select an MCQ answer first!",
         task_missing: "Please write your Task answer first!",
@@ -241,17 +358,17 @@ const UI_MESSAGES = {
         subtopic_error: "AI failed to generate subtopics. Try again."
     },
     Hindi: {
-        quota: "🚫 दैनिक AI कोटा समाप्त हो गया है। कृपया कल पुनः प्रयास करें या अपनी API Key जांचें।",
-        busy: "⚠️ AI व्यस्त है। कृपया 5 सेकंड में पुनः प्रयास करें।",
-        generic_error: "लोड करने में विफल। कृपया पुन: प्रयास करें।",
-        mcq_missing: "कृपया पहले MCQ उत्तर चुनें!",
-        task_missing: "कृपया पहले अपना टास्क उत्तर लिखें!",
-        roadmap_error: "रोडमैप जनरेट नहीं हुआ। फिर से प्रयास करें।",
-        subtopic_error: "AI सबटॉपिक जनरेट नहीं कर पाया। फिर से प्रयास करें।"
+        quota: "ðŸš« à¤¦à¥ˆà¤¨à¤¿à¤• AI à¤•à¥‹à¤Ÿà¤¾ à¤¸à¤®à¤¾à¤ªà¥à¤¤ à¤¹à¥‹ à¤—à¤¯à¤¾ à¤¹à¥ˆà¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤•à¤² à¤ªà¥à¤¨à¤ƒ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚ à¤¯à¤¾ à¤…à¤ªà¤¨à¥€ API Key à¤œà¤¾à¤‚à¤šà¥‡à¤‚à¥¤",
+        busy: "âš ï¸ AI à¤µà¥à¤¯à¤¸à¥à¤¤ à¤¹à¥ˆà¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ 5 à¤¸à¥‡à¤•à¤‚à¤¡ à¤®à¥‡à¤‚ à¤ªà¥à¤¨à¤ƒ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚à¥¤",
+        generic_error: "à¤²à¥‹à¤¡ à¤•à¤°à¤¨à¥‡ à¤®à¥‡à¤‚ à¤µà¤¿à¤«à¤²à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤ªà¥à¤¨: à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚à¥¤",
+        mcq_missing: "à¤•à¥ƒà¤ªà¤¯à¤¾ à¤ªà¤¹à¤²à¥‡ MCQ à¤‰à¤¤à¥à¤¤à¤° à¤šà¥à¤¨à¥‡à¤‚!",
+        task_missing: "à¤•à¥ƒà¤ªà¤¯à¤¾ à¤ªà¤¹à¤²à¥‡ à¤…à¤ªà¤¨à¤¾ à¤Ÿà¤¾à¤¸à¥à¤• à¤‰à¤¤à¥à¤¤à¤° à¤²à¤¿à¤–à¥‡à¤‚!",
+        roadmap_error: "à¤°à¥‹à¤¡à¤®à¥ˆà¤ª à¤œà¤¨à¤°à¥‡à¤Ÿ à¤¨à¤¹à¥€à¤‚ à¤¹à¥à¤†à¥¤ à¤«à¤¿à¤° à¤¸à¥‡ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚à¥¤",
+        subtopic_error: "AI à¤¸à¤¬à¤Ÿà¥‰à¤ªà¤¿à¤• à¤œà¤¨à¤°à¥‡à¤Ÿ à¤¨à¤¹à¥€à¤‚ à¤•à¤° à¤ªà¤¾à¤¯à¤¾à¥¤ à¤«à¤¿à¤° à¤¸à¥‡ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚à¥¤"
     },
     Hinglish: {
-        quota: "🚫 Daily AI Quota reach ho gaya hai. Kal try karein ya apni API Key check karein.",
-        busy: "⚠️ AI abhi busy hai. 5 seconds baad retry karo.",
+        quota: "ðŸš« Daily AI Quota reach ho gaya hai. Kal try karein ya apni API Key check karein.",
+        busy: "âš ï¸ AI abhi busy hai. 5 seconds baad retry karo.",
         generic_error: "Load nahi ho paya. Please try again.",
         mcq_missing: "Pehle MCQ ka answer select karo!",
         task_missing: "Pehle Task ka answer likho!",
@@ -260,16 +377,19 @@ const UI_MESSAGES = {
     }
 };
 
-// ─────────────────────────────────────────────────────────────
-// 📋 SidebarContent — wrapped in React.memo so it ONLY re-renders
+
+const BookOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>;
+const NoteIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><polyline points="15 3 15 9 21 9" /></svg>;
+const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>;
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ðŸ“‹ SidebarContent â€” wrapped in React.memo so it ONLY re-renders
 // when sidebar-specific props change (notes, tab). NOT on typing.
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SidebarContent = React.memo(function SidebarContent({
     activeSidebarTab,
     setActiveSidebarTab,
     roadmapData,
-    bookIndex,
-    selectedBook,
     progress,
     autoNotes,
     manualNotes,
@@ -281,8 +401,7 @@ const SidebarContent = React.memo(function SidebarContent({
     isDesktop,
     onClose,
     onLogout,
-    onReset,
-    setAppStage
+    onReset
 }) {
     // Local state for 'Saved' feedback
     const [justSaved, setJustSaved] = React.useState(false);
@@ -326,55 +445,26 @@ const SidebarContent = React.memo(function SidebarContent({
             <div className="sidebar-scroll-area">
                 {activeSidebarTab === 'track' ? (
                     <div className="track-list">
-                        {roadmapData?.steps ? (
-                            roadmapData.steps.map((step, idx) => {
-                                const stepNum = idx + 1;
-                                const isCompleted = progress.step > stepNum;
-                                const isCurrent = progress.step === stepNum;
-                                return (
-                                    <div key={idx} className={`track-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}>
-                                        <div className="track-dot">{isCompleted ? '✔' : stepNum}</div>
-                                        <div className="track-content">
-                                            <h5>{step.title}</h5>
-                                            <p>{isCurrent ? 'Ongoing...' : isCompleted ? 'Completed' : 'Upcoming'}</p>
-                                        </div>
+                        {roadmapData?.steps?.map((step, idx) => {
+                            const stepNum = idx + 1;
+                            const isCompleted = progress.step > stepNum;
+                            const isCurrent = progress.step === stepNum;
+                            return (
+                                <div key={idx} className={`track-item ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''}`}>
+                                    <div className="track-dot">{isCompleted ? '✔' : stepNum}</div>
+                                    <div className="track-content">
+                                        <h5>{step.title}</h5>
+                                        <p>{isCurrent ? 'Ongoing...' : isCompleted ? 'Completed' : 'Upcoming'}</p>
                                     </div>
-                                );
-                            })
-                        ) : bookIndex?.chapters ? (
-                            <div className="course-track-list">
-                                <div className="current-book-banner glass-card mb-4" style={{ padding: '0.75rem', border: '1px solid var(--primary-alpha)' }}>
-                                    <h6 style={{ margin: 0, fontSize: '0.75rem', color: 'var(--primary)' }}>Currently Reading</h6>
-                                    <h5 style={{ margin: 0, fontSize: '0.9rem' }}>{selectedBook?.title}</h5>
                                 </div>
-                                {bookIndex.chapters.map((ch, cidx) => (
-                                    <div key={cidx} className="chapter-track-group">
-                                        <div className="chapter-track-label">Chapter {ch.chapter_number}</div>
-                                        {ch.topics.map((t, tidx) => {
-                                            // Topic index logic same as BookIndex components
-                                            // Note: In real app we'd need a robust global index tracker
-                                            const isCurrentTopic = t.toLowerCase().includes(progress.current_concept?.toLowerCase() || '~~~~');
-                                            return (
-                                                <div key={tidx} className={`track-item mini ${isCurrentTopic ? 'current' : ''}`}>
-                                                    <div className="track-dot dot-sm"></div>
-                                                    <div className="track-content">
-                                                        <p style={{ margin: 0, fontSize: '0.85rem' }}>{t}</p>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>No progression active</p>
-                        )}
+                            );
+                        }) || <p style={{ color: 'var(--text-muted)', padding: '1rem' }}>No roadmap active</p>}
                     </div>
                 ) : activeSidebarTab === 'notes' ? (
                     <div className="notes-panel">
                         <div className="notes-section">
                             <div className="notes-header">
-                                <div className="section-label">✨ AI Auto-Notes</div>
+                                <div className="section-label">âœ¨ AI Auto-Notes</div>
                                 <div className="header-actions">
                                     <button
                                         className="icon-btn-text"
@@ -382,7 +472,7 @@ const SidebarContent = React.memo(function SidebarContent({
                                         disabled={isGeneratingNotes}
                                         title="Generate/Update Study Guide"
                                     >
-                                        {isGeneratingNotes ? <Loader2 size={14} className="animate-spin" /> : '✨ Gen Guide'}
+                                        {isGeneratingNotes ? <Loader2 size={14} className="animate-spin" /> : 'âœ¨ Gen Guide'}
                                     </button>
                                     <button
                                         className="icon-btn"
@@ -405,14 +495,14 @@ const SidebarContent = React.memo(function SidebarContent({
 
                         <div className="notes-section">
                             <div className="notes-header">
-                                <div className="section-label">📋 Personal Notes</div>
+                                <div className="section-label">ðŸ“‹ Personal Notes</div>
                                 <div className="header-actions">
                                     <button
                                         className={`icon-btn-text ${justSaved ? 'saved' : ''}`}
                                         onClick={handleManualSave}
                                         title="Save Note"
                                     >
-                                        {justSaved ? 'Saved! ✅' : '💾 Save'}
+                                        {justSaved ? 'Saved! âœ…' : 'ðŸ’¾ Save'}
                                     </button>
                                     <button
                                         className="icon-btn"
@@ -434,15 +524,6 @@ const SidebarContent = React.memo(function SidebarContent({
                     </div>
                 ) : (
                     <div className="menu-panel">
-                        {selectedBook && (
-                            <button className="menu-item highlight" onClick={() => setAppStage('course-structure')}>
-                                <BookOpenIcon />
-                                <div className="menu-text">
-                                    <span>Switch Book</span>
-                                    <small>Change subject / semester</small>
-                                </div>
-                            </button>
-                        )}
                         <button className="menu-item" onClick={onReset}>
                             <RefreshCcw size={18} />
                             <div className="menu-text">
@@ -464,10 +545,7 @@ const SidebarContent = React.memo(function SidebarContent({
     );
 }); // end React.memo
 
-// Simple icon wrappers to avoid importing inside SidebarContent
-const BookOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></svg>;
-const NoteIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><polyline points="15 3 15 9 21 9" /></svg>;
-const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>;
+// Icons defined above
 
 function App() {
     const [topic, setTopic] = useState('');
@@ -495,21 +573,19 @@ function App() {
     const [sessions, setSessions] = useState([]);
     const [conversationSummary, setConversationSummary] = useState('');
     const [showExitWarning, setShowExitWarning] = useState(false);
-    // ⚡ XP + Progress (Feature 3)
+    // âš¡ XP + Progress (Feature 3)
     const [xp, setXp] = useState(0);
     const [streak, setStreak] = useState(0);
-
+    
     // 🎓 Full Course States
     const [courseData, setCourseData] = useState(null);
     const [selectedBook, setSelectedBook] = useState(null);
     const [bookIndex, setBookIndex] = useState(null);
-    const [courseMeta, setCourseMeta] = useState({ structure: null, bookIndices: {} });
-    const [isFetchingCourse, setIsFetchingCourse] = useState(false);
     const [progress, setProgress] = useState({ step: 0, total_steps: 0, current_concept: '' });
-    // 🤔 MCQ State (Feature 2 - Socratic)
+    // ðŸ¤” MCQ State (Feature 2 - Socratic)
     const [mcqState, setMcqState] = useState({}); // { [msgIndex]: { selected, submitted } }
 
-    // 🗺️ EXPLORE FLOW STATE
+    // ðŸ—ºï¸ EXPLORE FLOW STATE
     const [appStage, setAppStage] = useState('home');
     const [subtopics, setSubtopics] = useState([]);
     const [selectedSubtopics, setSelectedSubtopics] = useState([]);
@@ -517,17 +593,22 @@ function App() {
     const [roadmapData, setRoadmapData] = useState(null);
     const [roadmapType, setRoadmapType] = useState('full');
     const [allSelected, setAllSelected] = useState(false);
-    // 👁️ Show/hide toggles
-    const [showKey, setShowKey] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirm, setShowConfirm] = useState(false);
     const [showTrackSidebar, setShowTrackSidebar] = useState(false);
-    const [activeSidebarTab, setActiveSidebarTab] = useState('track'); // 'track' or 'notes'
+    const [activeSidebarTab, setActiveSidebarTab] = useState('track');
     const [autoNotes, setAutoNotes] = useState(() => localStorage.getItem('ai-tutor-auto-notes') || '');
     const [manualNotes, setManualNotes] = useState(() => localStorage.getItem('ai-tutor-personal-notes') || '');
     const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
-    const [cooldown, setCooldown] = useState(0); // ⏱️ Cooldown timer in seconds
-    const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1100);
+    const [cooldown, setCooldown] = useState(0); // â±ï¸ Cooldown state
+
+    // Stable callbacks for SidebarContent
+    const stableSetManualNotes = React.useCallback((val) => setManualNotes(val), []);
+    const stableSetActiveSidebarTab = React.useCallback((tab) => setActiveSidebarTab(tab), []);
+    const stableCloseSidebar = React.useCallback(() => setShowTrackSidebar(false), []);
+    // ðŸ‘ï¸ Show/hide toggles
+    const [showKey, setShowKey] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
+    const [isDesktop, setIsDesktop] = window && window.innerWidth ? useState(window.innerWidth >= 1100) : useState(true);
 
     const chatEndRef = useRef(null);
 
@@ -537,19 +618,7 @@ function App() {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Stable callbacks for SidebarContent (React.memo needs stable refs to bail out properly)
-    const stableSetManualNotes = React.useCallback((val) => setManualNotes(val), []);
-    const stableSetActiveSidebarTab = React.useCallback((tab) => setActiveSidebarTab(tab), []);
-    const stableCloseSidebar = React.useCallback(() => setShowTrackSidebar(false), []);
 
-    // 📓 Sync Notes to LocalStorage
-    useEffect(() => {
-        localStorage.setItem('ai-tutor-auto-notes', autoNotes);
-    }, [autoNotes]);
-
-    useEffect(() => {
-        localStorage.setItem('ai-tutor-personal-notes', manualNotes);
-    }, [manualNotes]);
 
     // Load sessions and check auth status on mount
     useEffect(() => {
@@ -602,15 +671,12 @@ function App() {
             const updated = prev.findIndex(s => s.id === session.id) !== -1
                 ? prev.map(s => s.id === session.id ? session : s)
                 : [session, ...prev.slice(0, 9)];
-            
-            // Limit to 10 sessions in local storage too
-            const trimmed = updated.slice(0, 10);
-            localStorage.setItem('ai-tutor-sessions', JSON.stringify(trimmed));
-            return trimmed;
+            localStorage.setItem('ai-tutor-sessions', JSON.stringify(updated));
+            return updated;
         });
     };
 
-    // 🧠 ROLLING SUMMARY MEMORY
+    // ðŸ§  ROLLING SUMMARY MEMORY
     const triggerSummary = async (currentMessages, currentTopic, currentMode, currentLanguage) => {
         if (currentMessages.length < 6) return;
 
@@ -628,7 +694,7 @@ function App() {
             });
             const newSummary = res.data.summary;
             setConversationSummary(newSummary);
-            console.log('🧠 Summary Memory Updated:\n', newSummary);
+            console.log('ðŸ§  Summary Memory Updated:\n', newSummary);
             return newSummary;
         } catch (e) {
             console.warn('Summary generation failed (non-critical):', e.message);
@@ -640,7 +706,7 @@ function App() {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // 🔒 Chat Mode: lock page scroll when inside chat
+    // ðŸ”’ Chat Mode: lock page scroll when inside chat
     useEffect(() => {
         if (isStarted) {
             document.body.classList.add('chat-mode');
@@ -654,7 +720,7 @@ function App() {
         scrollToBottom();
     }, [messages]);
 
-    // ⏱️ Cooldown Timer Effect
+    // â±ï¸ Cooldown Timer Effect
     useEffect(() => {
         if (cooldown > 0) {
             const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
@@ -662,14 +728,13 @@ function App() {
         }
     }, [cooldown]);
 
-    // Step 1: Topic submit → fetch subtopics
+    // Step 1: Topic submit â†’ fetch subtopics
     const handleTopicExplore = async (e) => {
         e.preventDefault();
         if (!topic.trim() || !isApiKeySet || isLoading || cooldown > 0) return;
         setIsLoading(true);
         setError(null);
         setSubtopics([]);
-        setCourseMeta({ structure: null, bookIndices: {} }); // Reset persistent cache for new topic
         const token = localStorage.getItem('ai-tutor-token');
         try {
             const res = await axios.post(`${BASE_URL}/api/explore`, { topic, language }, {
@@ -682,7 +747,7 @@ function App() {
             }
             setSubtopics(subs);
             setAppStage('explore');
-            setCooldown(20); // ⏱️ Set 20s cooldown
+            setCooldown(20); // â±ï¸ Set 20s cooldown
         } catch (err) {
             const msg = err.response?.data?.error || '';
             const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
@@ -730,7 +795,7 @@ function App() {
         setAppStage('roadmap-choice');
     };
 
-    // Step 3: Roadmap type chosen → fetch roadmap
+    // Step 3: Roadmap type chosen â†’ fetch roadmap
     const handleRoadmapFetch = async (type) => {
         if (isLoading || cooldown > 0) return;
         setRoadmapType(type);
@@ -756,7 +821,7 @@ function App() {
             }
             setRoadmapData(rd);
             setAppStage('roadmap');
-            setCooldown(20); // ⏱️ Set 20s cooldown
+            setCooldown(20); // â±ï¸ Set 20s cooldown
         } catch (err) {
             const msg = err.response?.data?.error || '';
             const msgs = UI_MESSAGES[language] || UI_MESSAGES.English;
@@ -773,147 +838,91 @@ function App() {
         }
     };
 
-    // 🎓 Full Course Fetching Logic
+    // 🎓 Step 3.1: Fetch Course Structure
     const handleCourseFetch = async () => {
-        if (isLoading || isFetchingCourse || cooldown > 0) return;
-        
-        // Check Cache first
-        if (courseMeta.structure) {
-            setCourseData(courseMeta.structure);
-            setAppStage('course-structure');
-            return;
-        }
-
+        if (isLoading || cooldown > 0) return;
         setRoadmapType('course');
         setIsLoading(true);
-        setIsFetchingCourse(true);
         setError(null);
         const token = localStorage.getItem('ai-tutor-token');
         try {
-            const res = await axios.post(`${BASE_URL}/api/course/structure`, { topic, language }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const structure = res.data;
-            setCourseData(structure);
-            setCourseMeta(prev => ({ ...prev, structure }));
-            setAppStage('course-structure');
-            setCooldown(20);
-        } catch (err) { setError("Course structure load karne mein problem hui."); }
-        finally { 
-            setIsLoading(false); 
-            setIsFetchingCourse(false);
-        }
-    };
-
-    const handleBookSelect = async (book) => {
-        if (isLoading || isFetchingCourse) return;
-        setSelectedBook(book);
-
-        // Check Cache first
-        if (courseMeta.bookIndices[book.title]) {
-            setBookIndex(courseMeta.bookIndices[book.title]);
-            setAppStage('course-index');
-            return;
-        }
-
-        setIsLoading(true);
-        setIsFetchingCourse(true);
-        setError(null);
-        const token = localStorage.getItem('ai-tutor-token');
-        try {
-            const res = await axios.post(`${BASE_URL}/api/course/book-index`, { bookTitle: book.title, topic, language }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const indexData = res.data;
-            setBookIndex(indexData);
-            setCourseMeta(prev => ({
-                ...prev,
-                bookIndices: { ...prev.bookIndices, [book.title]: indexData }
-            }));
-            setAppStage('course-index');
-        } catch (err) { setError("Book index load karne mein problem hui."); }
-        finally { 
-            setIsLoading(false); 
-            setIsFetchingCourse(false);
-        }
-    };
-
-    const startCourseTopic = async (chapter, topicName, topicIndex) => {
-        if (isLoading || isFetchingCourse) return;
-        const fullTopicDisplay = `${topic} - ${topicName}`;
-        setTopic(fullTopicDisplay);
-        setIsStarted(true);
-        setIsLoading(true);
-        setIsFetchingCourse(true);
-        setAppStage('learning');
-        const token = localStorage.getItem('ai-tutor-token');
-        
-        const context = `Starting a Full Course topic. 
-        Book: "${selectedBook.title}" (Topic: ${topic})
-        Semester: ${courseData.semesters.find(s => s.books.some(b => b.title === selectedBook.title))?.semester}
-        Chapter ${chapter.chapter_number}: "${chapter.chapter_title}"
-        Specific Topic: "${topicName}"
-        Learning Progression Index: ${topicIndex}`;
-
-        try {
-            const res = await axios.post(API_URL, { 
-                message: `${context}\nPlease begin the lesson.`, 
-                mode, 
-                language, 
-                history: [] 
+            const res = await axios.post(`${BASE_URL}/api/course/structure`, {
+                topic,
+                language
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            setCourseData(res.data);
+            setAppStage('course-structure');
+            setCooldown(20);
+        } catch (err) {
+            setError("Course structure load karne mein problem hui.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
+    // 🎓 Step 3.2: Fetch Book Index
+    const handleBookSelect = async (book) => {
+        if (isLoading) return;
+        // Enforce linear start: For now, assume a new book has no progress.
+        // In a real app, you'd load progress from user data.
+        setSelectedBook({ ...book, hasProgress: false }); 
+        setIsLoading(true);
+        setError(null);
+        const token = localStorage.getItem('ai-tutor-token');
+        try {
+            const res = await axios.post(`${BASE_URL}/api/course/book-index`, {
+                bookTitle: book.title,
+                topic,
+                language
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setBookIndex(res.data);
+            setAppStage('course-index');
+        } catch (err) {
+            setError("Book index load karne mein problem hui.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // 🎓 Step 3.3: Start Tutor for Topic
+    const startCourseTopic = async (chapter, topicName) => {
+        setTopic(`${topic} - ${topicName}`);
+        setIsStarted(true);
+        setIsLoading(true);
+        setAppStage('learning');
+        const token = localStorage.getItem('ai-tutor-token');
+        const context = `Starting a Full Course topic. This is Chapter ${chapter.chapter_number}: "${chapter.chapter_title}". The specific topic is "${topicName}". (Part of the book: "${selectedBook.title}" - ${topic})`;
+        
+        try {
+            const res = await axios.post(API_URL, {
+                message: `${context} Let's begin teaching.`,
+                mode,
+                language,
+                history: []
+            }, { headers: { Authorization: `Bearer ${token}` } });
+            
             const modelMsgParsed = res.data.parsed ? randomizeMCQ({ ...res.data.parsed }) : null;
             const history = [
                 { role: 'user', content: `Teach me about ${topicName}` },
                 { role: 'model', content: res.data.message, parsed: modelMsgParsed }
             ];
-            
             setMessages(history);
+            setProgress({ step: 1, total_steps: 1, current_concept: topicName });
             
-            // Full course sessions use the topicIndex for progress tracking
-            const initialProgress = { 
-                step: topicIndex, 
-                total_steps: 100, // Placeholder or total topics in book
-                current_concept: topicName 
+            const newSession = {
+                id: Date.now().toString(),
+                topic: topicName,
+                mode, language, messages: history, timestamp: Date.now()
             };
-            setProgress(initialProgress);
-
-            const courseContext = {
-                semester: courseData.semesters.find(s => s.books.some(b => b.title === selectedBook.title))?.semester,
-                bookTitle: selectedBook.title,
-                chapterNumber: chapter.chapter_number,
-                chapterTitle: chapter.chapter_title,
-                topicName: topicName,
-                isFullCourse: true
-            };
-
-            const note = res.data.parsed?.study_note || '';
-            if (note) setAutoNotes('- ' + note);
-
-            syncSession({ 
-                id: Date.now().toString(), 
-                topic: fullTopicDisplay, 
-                mode, 
-                language, 
-                messages: history, 
-                progress: initialProgress,
-                xp: xp,
-                streak: streak,
-                autoNotes: note ? '- ' + note : '',
-                manualNotes: manualNotes,
-                courseContext: courseContext,
-                courseMeta: courseMeta, // Store the cache in the session
-                timestamp: Date.now() 
-            });
-        } catch (err) { 
-            console.error("Start course topic error:", err);
-            setError("Topic start karne mein problem hui."); 
-        } finally { 
-            setIsLoading(false); 
-            setIsFetchingCourse(false);
+            syncSession(newSession);
+        } catch (err) {
+            setError("Topic start karne mein problem hui.");
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -974,14 +983,14 @@ function App() {
                 progress: initialProgress,
                 xp: xp,
                 streak: streak,
-                roadmapData: roadmapData, // 🗺️ Save roadmap for persistence
-                autoNotes: note ? '- ' + note : '',
-                manualNotes: manualNotes,
+                roadmapData: roadmapData, // ðŸ—ºï¸ Save roadmap for persistence
+                autoNotes: '',
+                manualNotes: '',
                 timestamp: Date.now()
             };
             syncSession(newSession);
         } catch (err) {
-            setMessages([{ role: 'model', content: '❌ Error connecting to the tutor. Please try again.' }]);
+            setMessages([{ role: 'model', content: 'âŒ Error connecting to the tutor. Please try again.' }]);
         } finally {
             setIsLoading(false);
         }
@@ -1001,7 +1010,7 @@ function App() {
         let finalMessageToSend = finalInput;
         const lastMsg = messages[messages.length - 1];
 
-        // 🧪 ONLY validate if this is NOT an action button retry
+        // ðŸ§ª ONLY validate if this is NOT an action button retry
         const isMcqTurn = !retryInput && lastMsg?.role === 'model' && lastMsg.parsed?.mastery_check?.options?.length > 0;
         if (isMcqTurn) {
             const msgIndex = messages.length - 1;
@@ -1038,9 +1047,9 @@ Task Answer: ${finalInput}`;
 
         try {
             // ============================================================
-            // 🧠 SUMMARY MEMORY — Smart History Builder
-            // Agar summary hai → summary + last 4 msgs bhejo (max ~500 tokens)
-            // Agar summary nahi → puri history (first 6 msgs tak hi hogi)
+            // ðŸ§  SUMMARY MEMORY â€” Smart History Builder
+            // Agar summary hai â†’ summary + last 4 msgs bhejo (max ~500 tokens)
+            // Agar summary nahi â†’ puri history (first 6 msgs tak hi hogi)
             // ============================================================
             let history = [];
 
@@ -1059,7 +1068,7 @@ Task Answer: ${finalInput}`;
                     parts: [{ text: msg.content }]
                 }));
                 history = [summaryAnchor, summaryAck, ...recentHistory];
-                console.log(`📦 Using SUMMARY MODE — ${history.length} items sent instead of ${messages.length}`);
+                console.log(`ðŸ“¦ Using SUMMARY MODE â€” ${history.length} items sent instead of ${messages.length}`);
             } else {
                 // FULL MODE: Seedha history bhejo (short conversation)
                 history = messages.map(msg => ({
@@ -1083,27 +1092,23 @@ Task Answer: ${finalInput}`;
             const updatedMessages = [...messages, { role: 'user', content: finalInput }, modelMsg];
             setMessages(prev => [...prev, modelMsg]);
 
-            // ⚡ XP + Progress Update from parsed JSON
+            // âš¡ XP + Progress Update from parsed JSON
             if (res.data.parsed) {
                 const p = res.data.parsed;
                 if (p.xp_reward) setXp(prev => prev + p.xp_reward);
                 if (p.progress) setProgress(p.progress);
             }
 
-            // 🔄 Har 6 messages ke baad background mein summary update karo
+            // ðŸ”„ Har 6 messages ke baad background mein summary update karo
             let latestSummary = conversationSummary;
             if (updatedMessages.length % 6 === 0) {
-                console.log(`🔄 Triggering summary at message count: ${updatedMessages.length}`);
+                console.log(`ðŸ”„ Triggering summary at message count: ${updatedMessages.length}`);
                 latestSummary = await triggerSummary(updatedMessages, topic, mode, language) || conversationSummary;
             }
 
             // Sync updated session to backend (summary ke saath)
             const currentSession = sessions.find(s => s.topic === topic);
 
-            // Extract study_note and update autoNotes
-            const note = res.data.parsed?.study_note;
-            const newAutoNotes = note ? (autoNotes ? autoNotes + '\n\n- ' + note : '- ' + note) : autoNotes;
-            if (note) setAutoNotes(newAutoNotes);
 
             const updatedSession = {
                 id: currentSession?.id || Date.now().toString(),
@@ -1115,16 +1120,13 @@ Task Answer: ${finalInput}`;
                 progress: progress,
                 xp: xp,
                 streak: streak,
-                roadmapData: roadmapData, 
-                roadmapType: roadmapType, // 🗺️ Essential for history resume
-                courseMeta: courseMeta, // Keep the course cache in sync during chat
-                selectedBook: selectedBook, // 📚 Ensure we know which book is active
-                autoNotes: newAutoNotes,
-                manualNotes: manualNotes,
+                roadmapData: roadmapData, // ðŸ—ºï¸ Keep roadmap in sync
+                autoNotes: '',
+                manualNotes: '',
                 timestamp: Date.now()
             };
             syncSession(updatedSession);
-            setCooldown(20); // ⏱️ Set 20s cooldown (only on success)
+            setCooldown(20); // â±ï¸ Set 20s cooldown (only on success)
 
         } catch (err) {
             const msg = err.response?.data?.error || "";
@@ -1138,7 +1140,7 @@ Task Answer: ${finalInput}`;
             }
 
             setError(errorMsg);
-            setMessages(prev => [...prev, { role: 'model', content: `❌ **Opps!** ${errorMsg}`, isError: true }]);
+            setMessages(prev => [...prev, { role: 'model', content: `âŒ **Opps!** ${errorMsg}`, isError: true }]);
         } finally {
             setIsLoading(false);
         }
@@ -1150,29 +1152,14 @@ Task Answer: ${finalInput}`;
         setLanguage(session.language);
         setMessages(session.messages);
         setConversationSummary(session.summary || '');
-        setRoadmapData(session.roadmapData || null); 
-        setRoadmapType(session.roadmapType || (session.selectedBook ? 'full-course' : 'full')); 
+        setRoadmapData(session.roadmapData || null); // ðŸ—ºï¸ Restore roadmap
         setProgress(session.progress || { step: 0, total_steps: 0, current_concept: '' });
         setXp(session.xp || 0);
         setStreak(session.streak || 0);
-        setCourseMeta(session.courseMeta || { structure: null, bookIndices: {} });
-        setCourseData(session.courseMeta?.structure || null);
         setAutoNotes(session.autoNotes || '');
         setManualNotes(session.manualNotes || '');
         setIsStarted(true);
-        setAppStage('learning'); 
-
-        // 🎓 Restore Full Course Context
-        if (session.selectedBook) {
-            setSelectedBook(session.selectedBook);
-            // 🎓 Ensure bookIndex is available if cached
-            if (session.courseMeta?.bookIndices && session.courseMeta.bookIndices[session.selectedBook.title]) {
-                setBookIndex(session.courseMeta.bookIndices[session.selectedBook.title]);
-            }
-        }
-        
-        // 🚀 Auto-open dashboard (sidebar) on resume
-        setShowTrackSidebar(true);
+        setAppStage('learning'); // Ensure stage is correct
     };
 
     const deleteSession = async (e, id) => {
@@ -1197,7 +1184,7 @@ Task Answer: ${finalInput}`;
     };
 
     const resetChat = () => {
-        // Agar session active hai aur kaafi progress ho chuki hai → warning dikhao
+        // Agar session active hai aur kaafi progress ho chuki hai â†’ warning dikhao
         if (messages.length >= 4) {
             setShowExitWarning(true);
             return;
@@ -1223,15 +1210,12 @@ Task Answer: ${finalInput}`;
         setSelectedSubtopic(null);
         setRoadmapData(null);
         setAllSelected(false);
-        setCourseMeta({ structure: null, bookIndices: {} }); // Reset cache on force reset
         setCourseData(null);
-        setBookIndex(null);
         setSelectedBook(null);
-        setAutoNotes('');
-        setManualNotes('');
-        localStorage.removeItem('ai-tutor-auto-notes');
-        localStorage.removeItem('ai-tutor-personal-notes');
+        setBookIndex(null);
     };
+
+
 
     const handleLogout = () => {
         localStorage.removeItem('ai-tutor-token');
@@ -1334,7 +1318,7 @@ Task Answer: ${finalInput}`;
             setStreak(0);
         }
 
-        // 🤖 Just update state, don't auto-send anymore
+        // ðŸ¤– Just update state, don't auto-send anymore
         const feedback = `[MCQ] I chose "${optionText}". (Result: ${isCorrect ? 'Correct' : 'Incorrect'})`;
         console.log("MCQ Selection:", feedback);
         setError(null); // Clear error after selection
@@ -1355,7 +1339,7 @@ Task Answer: ${finalInput}`;
             });
 
             if (res.data.notes) {
-                // 📝 Prepend/Append based on user preference - here we append with a separator
+                // ðŸ“ Prepend/Append based on user preference - here we append with a separator
                 const separator = "\n\n---\n\n";
                 const newNotes = autoNotes ? autoNotes + separator + res.data.notes : res.data.notes;
                 setAutoNotes(newNotes);
@@ -1422,12 +1406,12 @@ Task Answer: ${finalInput}`;
                 <h1>Study Notes: ${topic}</h1>
                 
                 <div class="section">
-                    <h2>📚 AI Generated Insights</h2>
+                    <h2>ðŸ“š AI Generated Insights</h2>
                     <div class="notes-content">${autoNotes || 'No AI notes generated yet.'}</div>
                 </div>
 
                 <div class="section">
-                    <h2>📝 Student Contributions</h2>
+                    <h2>ðŸ“ Student Contributions</h2>
                     <div class="notes-content">${manualNotes || 'No manual notes added.'}</div>
                 </div>
 
@@ -1443,160 +1427,297 @@ Task Answer: ${finalInput}`;
         printWindow.document.close();
     };
 
-    // Removed renderContent - replaced by TutorSession component
+    // JSON and Markdown Renderer
+    const renderContent = (msg, msgIndex) => {
+        // Try to use parsed, or auto-parse from raw content
+        let parsedData = msg.parsed || null;
+        const rawContent = typeof msg === 'string' ? msg : msg.content;
+
+        if (!parsedData && rawContent) {
+            // Try to extract and parse JSON from raw content
+            try {
+                const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const candidate = JSON.parse(jsonMatch[0]);
+                    // Only use if it has tutor fields
+                    if (candidate.explanation || candidate.redirect || candidate.analogy) {
+                        parsedData = candidate;
+                    }
+                }
+            } catch { /* not JSON, render as markdown */ }
+        }
+
+        if (!parsedData) {
+            // Show as markdown but also offer a retry button
+            const looksLikeRawJSON = rawContent && rawContent.trim().startsWith('{');
+            return (
+                <div>
+                    {looksLikeRawJSON ? (
+                        <div className="raw-json-warning">
+                            <span>âš ï¸ Response formatting issue</span>
+                            <button
+                                className="retry-explain-btn"
+                                onClick={() => sendMessage(null, lastPrompt || 'Please explain again more simply')}
+                                disabled={isLoading}
+                            >
+                                ðŸ”„ Samajh Nahi Aaya? Retry
+                            </button>
+                        </div>
+                    ) : null}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                        code({ node, inline, className, children, ...props }) {
+                            const match = /language-(\w+)/.exec(className || '');
+                            const lang = match ? match[1] : '';
+                            const content = String(children).replace(/\n$/, '');
+                            if (!inline) {
+                                if (lang === 'visual') return <VisualMode content={content} />;
+                                if (lang === 'quick') return <QuickMode>{content}</QuickMode>;
+                            }
+                            return <code className={className} {...props}>{children}</code>;
+                        }
+                    }}>{rawContent}</ReactMarkdown>
+                </div>
+            );
+        }
+
+        const p = parsedData;
+
+        // Handle redirect Off-Topic Guard
+        if (p.redirect) {
+            return (
+                <div className="tutor-card warning">
+                    <div className="card-header">
+                        <span className="card-icon">ðŸ›‘</span> Off-Topic Guard
+                    </div>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.redirect}</ReactMarkdown>
+                </div>
+            );
+        }
+
+        return (
+            <div className="rich-response">
+                {/* 1. Explanation */}
+                {p.explanation && (
+                    <div className="explanation-section">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            code({ node, inline, className, children, ...props }) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                const lang = match ? match[1] : '';
+                                const content = String(children).replace(/\n$/, '');
+                                if (!inline) {
+                                    if (lang === 'visual') return <VisualMode content={content} />;
+                                    if (lang === 'quick') return <QuickMode>{content}</QuickMode>;
+                                }
+                                return <code className={className} {...props}>{children}</code>;
+                            }
+                        }}>{p.explanation}</ReactMarkdown>
+                    </div>
+                )}
+
+                {/* 2. Analogy */}
+                {p.analogy && (
+                    <div className="tutor-card analogy-card">
+                        <div className="card-header">
+                            <Lightbulb size={16} className="card-icon" /> Real-world Analogy
+                        </div>
+                        <p>{p.analogy}</p>
+                    </div>
+                )}
+
+                {/* 3. Hint */}
+                {p.hint && (
+                    <div className="tutor-card hint-card">
+                        <div className="card-header">
+                            <span>ðŸ’¡</span> Hint
+                        </div>
+                        <p>{p.hint}</p>
+                    </div>
+                )}
+
+                {/* 4. Quick Check (MCQ) â€” shown before Task */}
+                {p.mastery_check && p.mastery_check.options && (
+                    <div className="tutor-card mcq-card">
+                        <div className="card-header">
+                            <span>ðŸŽ¯</span> Quick Check
+                        </div>
+                        <p className="mcq-question">{p.mastery_check.question}</p>
+
+                        <div className="mcq-options">
+                            {p.mastery_check.options.map((opt, optIdx) => {
+                                const mcq = mcqState[msgIndex];
+                                const isSelected = mcq?.selected === optIdx;
+                                const isSubmitted = mcq?.submitted;
+                                const isCorrectOpt = optIdx === p.mastery_check.correct_index;
+
+                                let btnClass = 'mcq-option-btn';
+                                if (isSubmitted) {
+                                    if (isCorrectOpt) btnClass += ' correct';
+                                    else if (isSelected) btnClass += ' incorrect';
+                                    else btnClass += ' disabled';
+                                } else if (isSelected) {
+                                    btnClass += ' selected';
+                                }
+
+                                return (
+                                    <button
+                                        key={optIdx}
+                                        className={btnClass}
+                                        disabled={isSubmitted}
+                                        onClick={() => handleMcqSubmit(msgIndex, optIdx, p.mastery_check.correct_index, opt)}
+                                    >
+                                        {opt}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {mcqState[msgIndex]?.submitted && (
+                            <div className={`mcq-feedback ${mcqState[msgIndex].isCorrect ? 'positive' : 'negative'}`}>
+                                {mcqState[msgIndex].isCorrect
+                                    ? `âœ¨ Correct! +20 XP`
+                                    : `âŒ Oops! The correct answer was: ${p.mastery_check.options[p.mastery_check.correct_index]}`}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 5. Your Task â€” shown after Quick Check */}
+                {p.task && (
+                    <div className="tutor-card task-card">
+                        <div className="card-header">
+                            <CheckSquare size={16} className="card-icon" /> Your Task
+                        </div>
+                        <ReactMarkdown 
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                                code({ node, inline, className, children, ...props }) {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const lang = match ? match[1] : '';
+                                    if (!inline && lang === 'quick') return <QuickMode>{String(children)}</QuickMode>;
+                                    return <code className={className} {...props}>{children}</code>;
+                                }
+                            }}
+                        >{p.task}</ReactMarkdown>
+                    </div>
+                )}
+
+                {/* 6. Universal Action Buttons (Deep Dive & Retry) */}
+                <div className="msg-action-row">
+                    <button
+                        className="deep-dive-btn"
+                        onClick={() => sendMessage(null, language === 'English' ? 'Explain this in great detail with more examples.' : 'Iske baare mein bohot vistaar se samjhao (Explain in Detail)')}
+                        disabled={isLoading || cooldown > 0}
+                        title="Get an in-depth explanation"
+                    >
+                        {cooldown > 0 ? `Wait ${cooldown}s` : <>ðŸ”¬ {language === 'English' ? 'Deep Dive' : 'Explain in Detail'}</>}
+                    </button>
+                    <button
+                        className="retry-explain-btn"
+                        onClick={() => sendMessage(null, 'Yeh mujhe samajh nahi aaya. Please isse aur simple aur short tarike se explain karo')}
+                        disabled={isLoading || cooldown > 0}
+                        title="Ask AI to explain more simply"
+                    >
+                        {cooldown > 0 ? `${cooldown}s` : 'ðŸ”„ Retry'}
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     if (!isAuthenticated) {
         return (
             <div className="App">
-                <div className="setup-container animate-fade-in" style={{ maxWidth: '1100px', width: '95%' }}>
-                    <div className="auth-split-wrapper">
-                        {/* 🌟 Left Side: Welcome & Benefits */}
-                        <div className="auth-welcome-side">
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.6 }}
-                            >
-                                <GraduationCap size={56} className="hero-icon" style={{ marginBottom: '1rem' }} />
-                                <h1>Smart AI Tutor</h1>
-                                <p>Master any topic with personalized roadmaps and interactive AI tutoring.</p>
-                                
-                                <div className="benefit-list">
-                                    <div className="benefit-item">
-                                        <div className="benefit-icon"><BookOpen size={20} /></div>
-                                        <div className="benefit-text">
-                                            <h4>Custom Roadmaps</h4>
-                                            <p>Generate detailed step-by-step paths for any subject.</p>
-                                        </div>
-                                    </div>
-                                    <div className="benefit-item">
-                                        <div className="benefit-icon"><Sparkles size={20} /></div>
-                                        <div className="benefit-text">
-                                            <h4>Socratic Learning</h4>
-                                            <p>AI that guides you with analogies, hints, and quizzes.</p>
-                                        </div>
-                                    </div>
-                                    <div className="benefit-item">
-                                        <div className="benefit-icon"><Trophy size={20} /></div>
-                                        <div className="benefit-text">
-                                            <h4>Track Progress</h4>
-                                            <p>Earn XP, maintain streaks, and download your study notes.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
+                <div className="setup-container animate-fade-in">
+                    <header className="hero">
+                        <GraduationCap size={64} className="hero-icon" />
+                        <h1>Smart AI Tutor</h1>
+                        <p>Log in to access your personalized learning roadmaps.</p>
+                    </header>
+                    <form onSubmit={handleAuthSubmit} className="setup-card glass-card">
+                        <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
+                        {error && <div className="error-banner">{error}</div>}
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Full Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="Your name"
+                                    value={authForm.name}
+                                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
+                                    required
+                                />
+                            </div>
+                        )}
+                        <div className="input-group">
+                            <label>{authMode === 'login' ? 'Email or Phone Number' : 'Email'}</label>
+                            <input
+                                type={authMode === 'login' ? 'text' : 'email'}
+                                placeholder={authMode === 'login' ? 'you@example.com or 9876543210' : 'you@example.com'}
+                                value={authForm.email}
+                                onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                                required
+                            />
                         </div>
-
-                        {/* 🔐 Right Side: Auth Form */}
-                        <div className="auth-form-side">
-                            <form onSubmit={handleAuthSubmit} className="setup-card animate-fade-in">
-                                <h2 style={{ fontSize: '1.75rem', fontWeight: '800', marginBottom: '0.5rem' }}>
-                                    {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
-                                </h2>
-                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                                    {authMode === 'login' ? 'Sign in to rescue your learning progress' : 'Join thousands of students learning today'}
-                                </p>
-
-                                {error && <div className="error-banner">{error}</div>}
-
-                                <AnimatePresence mode="wait">
-                                    <motion.div
-                                        key={authMode}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        {authMode === 'register' && (
-                                            <div className="input-group">
-                                                <label>Full Name</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="Your name"
-                                                    value={authForm.name}
-                                                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                                                    required
-                                                />
-                                            </div>
-                                        )}
-                                        <div className="input-group">
-                                            <label>{authMode === 'login' ? 'Email or Phone' : 'Email'}</label>
-                                            <input
-                                                type={authMode === 'login' ? 'text' : 'email'}
-                                                placeholder={authMode === 'login' ? 'you@example.com or phone' : 'you@example.com'}
-                                                value={authForm.email}
-                                                onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                                                required
-                                            />
-                                        </div>
-                                        {authMode === 'register' && (
-                                            <div className="input-group">
-                                                <label>Phone Number</label>
-                                                <input
-                                                    type="tel"
-                                                    placeholder="9876543210"
-                                                    value={authForm.phoneNumber}
-                                                    onChange={(e) => setAuthForm({ ...authForm, phoneNumber: e.target.value })}
-                                                    required
-                                                />
-                                            </div>
-                                        )}
-                                        <div className="input-group">
-                                            <label>Password</label>
-                                            <div className="input-eye-wrap">
-                                                <input
-                                                    type={showPassword ? 'text' : 'password'}
-                                                    placeholder="••••••••"
-                                                    value={authForm.password}
-                                                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                                                    required
-                                                />
-                                                <button type="button" className="eye-toggle" onClick={() => setShowPassword(p => !p)} tabIndex={-1}>
-                                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {authMode === 'register' && (
-                                            <div className="input-group">
-                                                <label>Confirm Password</label>
-                                                <div className="input-eye-wrap" style={{ marginBottom: '1rem' }}>
-                                                    <input
-                                                        type={showConfirm ? 'text' : 'password'}
-                                                        placeholder="••••••••"
-                                                        value={authForm.confirmPassword}
-                                                        onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
-                                                        required
-                                                    />
-                                                    <button type="button" className="eye-toggle" onClick={() => setShowConfirm(p => !p)} tabIndex={-1}>
-                                                        {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                </AnimatePresence>
-
-                                <button type="submit" className="start-btn" disabled={isLoading} style={{ width: '100%', marginTop: '1rem' }}>
-                                    {isLoading ? <Loader2 className="animate-spin" size={20} /> : authMode === 'login' ? 'Login Now' : 'Create Account'}
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Phone Number</label>
+                                <input
+                                    type="tel"
+                                    placeholder="9876543210"
+                                    value={authForm.phoneNumber}
+                                    onChange={(e) => setAuthForm({ ...authForm, phoneNumber: e.target.value })}
+                                    required
+                                />
+                            </div>
+                        )}
+                        <div className="input-group">
+                            <label>Password</label>
+                            <div className="input-eye-wrap">
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                    value={authForm.password}
+                                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                                    required
+                                />
+                                <button type="button" className="eye-toggle" onClick={() => setShowPassword(p => !p)} tabIndex={-1}>
+                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
-
-                                <div className="auth-toggle-text">
-                                    {authMode === 'login' ? "New to Smart AI Tutor? " : "Already using Smart AI Tutor? "}
-                                    <button
-                                        type="button"
-                                        className="auth-toggle-btn"
-                                        onClick={() => {
-                                            setAuthMode(authMode === 'login' ? 'register' : 'login');
-                                            setError(null);
-                                            setAuthForm({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
-                                        }}
-                                    >
-                                        {authMode === 'login' ? 'Sign up for free' : 'Sign in to your account'}
+                            </div>
+                        </div>
+                        {authMode === 'register' && (
+                            <div className="input-group">
+                                <label>Confirm Password</label>
+                                <div className="input-eye-wrap">
+                                    <input
+                                        type={showConfirm ? 'text' : 'password'}
+                                        placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                        value={authForm.confirmPassword}
+                                        onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                                        required
+                                    />
+                                    <button type="button" className="eye-toggle" onClick={() => setShowConfirm(p => !p)} tabIndex={-1}>
+                                        {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
-                            </form>
-                        </div>
-                    </div>
+                            </div>
+                        )}
+                        <button type="submit" className="start-btn" disabled={isLoading}>
+                            {isLoading ? <Loader2 className="animate-spin" size={20} /> : authMode === 'login' ? 'Login' : 'Sign Up'}
+                        </button>
+                        <p className="auth-toggle-text">
+                            {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+                            <button type="button" className="text-btn" onClick={() => {
+                                setAuthMode(authMode === 'login' ? 'register' : 'login');
+                                setError(null);
+                                setAuthForm({ name: '', email: '', phoneNumber: '', password: '', confirmPassword: '' });
+                                setShowPassword(false);
+                                setShowConfirm(false);
+                            }}>
+                                {authMode === 'login' ? 'Sign up here' : 'Login here'}
+                            </button>
+                        </p>
+                    </form>
                 </div>
             </div>
         );
@@ -1629,7 +1750,7 @@ Task Answer: ${finalInput}`;
                                         <div className="profile-info">
                                             <p className="profile-email">{userEmail}</p>
                                             <p className="profile-status">
-                                                {isApiKeySet ? '✅ API Key Active' : '❌ API Key Missing'}
+                                                {isApiKeySet ? 'âœ… API Key Active' : 'âŒ API Key Missing'}
                                             </p>
                                         </div>
                                     </div>
@@ -1652,11 +1773,11 @@ Task Answer: ${finalInput}`;
 
                     {(!isApiKeySet || showSettings) ? (
                         <form onSubmit={handleSaveApiKey} className="setup-card glass-card warning-border">
-                            <h3>🔑 Setup Gemini API Key</h3>
+                            <h3>ðŸ”‘ Setup Gemini API Key</h3>
                             <div className="api-key-guide">
-                                <p className="guide-title">📋 How to get your Google API Key?</p>
+                                <p className="guide-title">ðŸ“‹ How to get your Google API Key?</p>
                                 <ol className="guide-steps">
-                                    <li>Click the link below 👇</li>
+                                    <li>Click the link below ðŸ‘‡</li>
                                     <li>Sign in with your <strong>Google account</strong></li>
                                     <li>Click <strong>"Create API Key"</strong> button</li>
                                     <li>Copy the key and paste it below</li>
@@ -1667,9 +1788,9 @@ Task Answer: ${finalInput}`;
                                     rel="noopener noreferrer"
                                     className="api-key-link"
                                 >
-                                    🔗 Google AI Studio — Get Free API Key
+                                    ðŸ”— Google AI Studio â€” Get Free API Key
                                 </a>
-                                <p className="guide-note">✅ Completely Free &nbsp;•&nbsp; 🔒 Your key is encrypted &amp; stored securely</p>
+                                <p className="guide-note">âœ… Completely Free &nbsp;â€¢&nbsp; ðŸ”’ Your key is encrypted &amp; stored securely</p>
                             </div>
                             {error && <div className="error-banner">{error}</div>}
                             <div className="input-group">
@@ -1699,21 +1820,21 @@ Task Answer: ${finalInput}`;
                             </div>
                         </form>
                     ) : appStage === 'explore' ? (
-                        /* ── STAGE 2: Subtopic Multi-Select ── */
+                        /* â”€â”€ STAGE 2: Subtopic Multi-Select â”€â”€ */
                         <div className="explore-stage glass-card">
                             <div className="explore-header">
                                 <button className="back-btn" onClick={() => { setAppStage('home'); setSubtopics([]); setSelectedSubtopics([]); setAllSelected(false); }}>
                                     <ArrowLeft size={18} />
                                 </button>
                                 <div style={{ flex: 1 }}>
-                                    <h3>🗺️ What do you want to learn in <em>{topic}</em>?</h3>
-                                    <p className="explore-sub">Select one or more subtopics → then click Continue</p>
+                                    <h3>ðŸ—ºï¸ What do you want to learn in <em>{topic}</em>?</h3>
+                                    <p className="explore-sub">Select one or more subtopics â†’ then click Continue</p>
                                 </div>
                                 <button
                                     className={`select-all-btn ${allSelected ? 'deselect' : ''}`}
                                     onClick={handleSelectAll}
                                 >
-                                    {allSelected ? '✖ Deselect All' : '✔ Select All'}
+                                    {allSelected ? 'âœ– Deselect All' : 'âœ” Select All'}
                                 </button>
                             </div>
                             <div className="subtopics-grid">
@@ -1730,7 +1851,7 @@ Task Answer: ${finalInput}`;
                                             whileHover={{ scale: 1.03 }}
                                             whileTap={{ scale: 0.97 }}
                                         >
-                                            {isSelected && <span className="check-badge">✔</span>}
+                                            {isSelected && <span className="check-badge">âœ”</span>}
                                             <span className="subtopic-emoji">{s.emoji}</span>
                                             <h4>{s.title}</h4>
                                             <p>{s.description}</p>
@@ -1752,7 +1873,7 @@ Task Answer: ${finalInput}`;
                             )}
                         </div>
                     ) : appStage === 'roadmap-choice' ? (
-                        /* ── STAGE 3: Full or Short Roadmap ── */
+                        /* â”€â”€ STAGE 3: Full or Short Roadmap â”€â”€ */
                         <div className="roadmap-choice-stage glass-card">
                             <button className="back-btn mb-1" onClick={() => setAppStage('explore')}>
                                 <ArrowLeft size={18} /> Back
@@ -1771,9 +1892,9 @@ Task Answer: ${finalInput}`;
                                     whileTap={{ scale: 0.96 }}
                                     disabled={isLoading || cooldown > 0}
                                 >
-                                    <span>⚡</span>
+                                    <span>âš¡</span>
                                     <h4>Short</h4>
-                                    <p>10 steps — Quick Start</p>
+                                    <p>10 steps â€” Quick Start</p>
                                 </motion.button>
                                 <motion.button
                                     className="roadmap-type-btn full"
@@ -1782,9 +1903,9 @@ Task Answer: ${finalInput}`;
                                     whileTap={{ scale: 0.96 }}
                                     disabled={isLoading || cooldown > 0}
                                 >
-                                    <span>📚</span>
+                                    <span>ðŸ“š</span>
                                     <h4>Full</h4>
-                                    <p>20 steps — Deep Dive</p>
+                                    <p>20 steps â€” Deep Dive</p>
                                 </motion.button>
                                 <motion.button
                                     className="roadmap-type-btn master"
@@ -1793,9 +1914,9 @@ Task Answer: ${finalInput}`;
                                     whileTap={{ scale: 0.96 }}
                                     disabled={isLoading || cooldown > 0}
                                 >
-                                    <span>🏆</span>
+                                    <span>ðŸ†</span>
                                     <h4>Master</h4>
-                                    <p>50 steps — Pro Track</p>
+                                    <p>50 steps â€” Pro Track</p>
                                 </motion.button>
                                 <motion.button
                                     className="roadmap-type-btn advance"
@@ -1804,9 +1925,9 @@ Task Answer: ${finalInput}`;
                                     whileTap={{ scale: 0.96 }}
                                     disabled={isLoading || cooldown > 0}
                                 >
-                                    <span>🚀</span>
+                                    <span>ðŸš€</span>
                                     <h4>Advance</h4>
-                                    <p>100 steps — Ultimate</p>
+                                    <p>100 steps â€” Ultimate</p>
                                 </motion.button>
                                 <motion.button
                                     className="roadmap-type-btn full-course"
@@ -1815,32 +1936,32 @@ Task Answer: ${finalInput}`;
                                     whileTap={{ scale: 0.96 }}
                                     disabled={isLoading || cooldown > 0}
                                 >
-                                    <span>🎓</span>
+                                    <span>ðŸŽ“</span>
                                     <h4>Full Course</h4>
                                     <p>Semesters & Books</p>
                                 </motion.button>
                             </div>
                             {isLoading && <div className="loading-hint"><Loader2 className="animate-spin" size={20} /> Generating your roadmap...</div>}
-                            {cooldown > 0 && <div className="loading-hint cooldown">⏳ Please wait {cooldown}s before next request...</div>}
+                            {cooldown > 0 && <div className="loading-hint cooldown">â³ Please wait {cooldown}s before next request...</div>}
                         </div>
                     ) : appStage === 'roadmap' ? (
-                        /* ── STAGE 4: Roadmap Display ── */
+                        /* â”€â”€ STAGE 4: Roadmap Display â”€â”€ */
                         <div className="roadmap-display-stage glass-card">
                             <div className="roadmap-display-header">
                                 <button className="back-btn" onClick={() => setAppStage('roadmap-choice')}>
                                     <ArrowLeft size={18} />
                                 </button>
                                 <div>
-                                    <h3>🗺️ Your Learning Roadmap</h3>
+                                    <h3>ðŸ—ºï¸ Your Learning Roadmap</h3>
                                     <div className="roadmap-meta">
-                                        <span className="meta-badge">⏱️ {roadmapData?.estimated_time}</span>
-                                        <span className="meta-badge">📊 {roadmapData?.difficulty}</span>
-                                        <span className="meta-badge">{roadmapType === 'full' ? '📚 Full' : '⚡ Short'}</span>
+                                        <span className="meta-badge">â±ï¸ {roadmapData?.estimated_time}</span>
+                                        <span className="meta-badge">ðŸ“Š {roadmapData?.difficulty}</span>
+                                        <span className="meta-badge">{roadmapType === 'full' ? 'ðŸ“š Full' : 'âš¡ Short'}</span>
                                     </div>
                                 </div>
                             </div>
                             <div className="roadmap-topic-title">
-                                {selectedSubtopic?.emoji} {topic} → {selectedSubtopic?.title}
+                                {selectedSubtopic?.emoji} {topic} â†’ {selectedSubtopic?.title}
                             </div>
                             <div className="roadmap-steps-list">
                                 {roadmapData?.steps?.map((step, i) => (
@@ -1869,31 +1990,26 @@ Task Answer: ${finalInput}`;
                                 whileTap={{ scale: 0.98 }}
                                 disabled={isLoading}
                             >
-                                {isLoading ? <><Loader2 className="animate-spin" size={20} /> Starting...</> : <>🚀 Start Learning from Step 1 <ChevronRight size={20} /></>}
+                                {isLoading ? <><Loader2 className="animate-spin" size={20} /> Starting...</> : <>ðŸš€ Start Learning from Step 1 <ChevronRight size={20} /></>}
                             </motion.button>
                         </div>
                     ) : appStage === 'course-structure' ? (
-                        <CourseStructure 
-                            topic={topic}
-                            courseData={courseData}
-                            setAppStage={setAppStage}
-                            handleBookSelect={handleBookSelect}
-                            isFetching={isFetchingCourse}
-                            cooldown={cooldown}
-                            currentGlobalIndex={progress.step}
+                        <CourseStructureView 
+                            courseData={courseData} 
+                            topic={topic} 
+                            onBack={() => setAppStage('roadmap-choice')} 
+                            onBookSelect={handleBookSelect} 
                         />
                     ) : appStage === 'course-index' ? (
-                        <BookIndex 
-                            selectedBook={selectedBook}
-                            bookIndex={bookIndex}
-                            setAppStage={setAppStage}
-                            startCourseTopic={startCourseTopic}
-                            courseProgress={{ currentGlobalIndex: progress.step }} 
-                            isFetching={isFetchingCourse}
-                            cooldown={cooldown}
+                        <CourseIndexView 
+                            bookIndex={bookIndex} 
+                            selectedBook={selectedBook} 
+                            onBack={() => setAppStage('course-structure')} 
+                            onStartTopic={startCourseTopic} 
+                            isLoading={isLoading}
                         />
                     ) : (
-                        /* ── STAGE 1: Home / Topic Input ── */
+                        /* â”€â”€ STAGE 1: Home / Topic Input â”€â”€ */
                         <form onSubmit={handleTopicExplore} className="setup-card glass-card">
                             <div className="input-group">
                                 <label>What do you want to learn today?</label>
@@ -1910,18 +2026,18 @@ Task Answer: ${finalInput}`;
                                 <div className="input-group flex-1">
                                     <label>Style</label>
                                     <select value={mode} onChange={(e) => setMode(e.target.value)}>
-                                        <option value="beginner">👶 Beginner</option>
-                                        <option value="practical">🛠️ Practical</option>
-                                        <option value="deep">🧠 Deep</option>
+                                        <option value="beginner">ðŸ‘¶ Beginner</option>
+                                        <option value="practical">ðŸ› ï¸ Practical</option>
+                                        <option value="deep">ðŸ§  Deep</option>
                                     </select>
                                 </div>
 
                                 <div className="input-group flex-1">
                                     <label>Language</label>
                                     <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                                        <option value="English">🇬🇧 English</option>
-                                        <option value="Hindi">🇮🇳 Hindi</option>
-                                        <option value="Hinglish">🇮🇳 Hinglish</option>
+                                        <option value="English">ðŸ‡¬ðŸ‡§ English</option>
+                                        <option value="Hindi">ðŸ‡®ðŸ‡³ Hindi</option>
+                                        <option value="Hinglish">ðŸ‡®ðŸ‡³ Hinglish</option>
                                     </select>
                                 </div>
                             </div>
@@ -1935,71 +2051,32 @@ Task Answer: ${finalInput}`;
 
                     {sessions.length > 0 && appStage === 'home' && (
                         <div className="recent-sessions">
-                            {/* 🎓 Category 1: Active Courses */}
-                            {sessions.some(s => s.selectedBook) && (
-                                <div className="history-group">
-                                    <div className="history-title group-header">
-                                        <BookOpenIcon />
-                                        <span>My Active Courses</span>
-                                    </div>
-                                    <div className="history-list">
-                                        {sessions.filter(s => s.selectedBook).map(s => (
-                                            <motion.div
-                                                key={s.id}
-                                                whileHover={{ x: 5 }}
-                                                className="history-item course-item"
-                                                onClick={() => resumeSession(s)}
-                                            >
-                                                <div className="history-item-emoji">📚</div>
-                                                <div className="history-item-info">
-                                                    <h4>{s.selectedBook.title}</h4>
-                                                    <span>{s.topic} • {s.language}</span>
-                                                </div>
-                                                <button
-                                                    className="delete-session"
-                                                    onClick={(e) => deleteSession(e, s.id)}
-                                                    title="Remove from history"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </motion.div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 🗺️ Category 2: Recent Roadmaps */}
-                            {sessions.some(s => !s.selectedBook) && (
-                                <div className="history-group">
-                                    <div className="history-title group-header">
-                                        <History size={16} />
-                                        <span>Recent Roadmaps</span>
-                                    </div>
-                                    <div className="history-list">
-                                        {sessions.filter(s => !s.selectedBook).map(s => (
-                                            <motion.div
-                                                key={s.id}
-                                                whileHover={{ x: 5 }}
-                                                className="history-item roadmap-item"
-                                                onClick={() => resumeSession(s)}
-                                            >
-                                                <div className="history-item-emoji">🎯</div>
-                                                <div className="history-item-info">
-                                                    <h4>{s.topic}</h4>
-                                                    <span>{s.mode} • {s.language}</span>
-                                                </div>
-                                                <button
-                                                    className="delete-session"
-                                                    onClick={(e) => deleteSession(e, s.id)}
-                                                    title="Remove from history"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </motion.div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                            <div className="history-title">
+                                <History size={16} />
+                                <span>Recent Topics</span>
+                            </div>
+                            <div className="history-list">
+                                {sessions.map(s => (
+                                    <motion.div
+                                        key={s.id}
+                                        whileHover={{ x: 5 }}
+                                        className="history-item"
+                                        onClick={() => resumeSession(s)}
+                                    >
+                                        <div className="history-item-info">
+                                            <h4>{s.topic}</h4>
+                                            <span>{s.mode} â€¢ {s.language}</span>
+                                        </div>
+                                        <button
+                                            className="delete-session"
+                                            onClick={(e) => deleteSession(e, s.id)}
+                                            title="Remove from history"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </motion.div>
+                                ))}
+                            </div>
                         </div>
                     )}
                     {isApiKeySet && !showSettings && (
@@ -2019,11 +2096,11 @@ Task Answer: ${finalInput}`;
                 <div className="glow-blob glow-blob-2"></div>
             </div>
             <div className="chat-container">
-                {/* 🛑 ROADMAP FOCUS GUARD — Exit Warning Modal */}
+                {/* ðŸ›‘ ROADMAP FOCUS GUARD â€” Exit Warning Modal */}
                 {showExitWarning && (
                     <div className="exit-warning-overlay">
                         <div className="exit-warning-modal glass-card">
-                            <div className="exit-warning-icon">🛑</div>
+                            <div className="exit-warning-icon">ðŸ›‘</div>
                             <h3>{language === 'English' ? 'Leave Roadmap?' : 'Roadmap Chodna?'}</h3>
                             <p>
                                 {language === 'English'
@@ -2033,8 +2110,8 @@ Task Answer: ${finalInput}`;
                             </p>
                             <div className="exit-warning-tip">
                                 {language === 'English'
-                                    ? <>💡 <em>Complete this first — then we can start a new topic!</em></>
-                                    : <>💡 <em>Pehle ye complete karo — phir naya topic start karte hain!</em></>
+                                    ? <>ðŸ’¡ <em>Complete this first â€” then we can start a new topic!</em></>
+                                    : <>ðŸ’¡ <em>Pehle ye complete karo â€” phir naya topic start karte hain!</em></>
                                 }
                             </div>
                             <div className="exit-warning-buttons">
@@ -2042,21 +2119,21 @@ Task Answer: ${finalInput}`;
                                     className="exit-continue-btn"
                                     onClick={() => setShowExitWarning(false)}
                                 >
-                                    {language === 'English' ? '✅ Continue Learning' : '✅ Continue Learning'}
+                                    {language === 'English' ? 'âœ… Continue Learning' : 'âœ… Continue Learning'}
                                 </button>
                                 <button
                                     className="exit-leave-btn"
                                     onClick={forceReset}
                                 >
-                                    {language === 'English' ? '🚪 Leave Anyway' : '🚪 Leave Anyway'}
+                                    {language === 'English' ? 'ðŸšª Leave Anyway' : 'ðŸšª Leave Anyway'}
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
                 {/* Structural Flex Container */}
-                <div className={`chat-content-split ${isDesktop && (roadmapData?.steps || selectedBook) && showTrackSidebar ? 'has-sidebar' : 'no-sidebar'} ${showTrackSidebar ? 'sidebar-open' : 'sidebar-closed'}`}>
-                    {/* 📝 Left Side: Main Column (Header + Messages + Input) */}
+                <div className="chat-content-split">
+                    {/* ðŸ“ Left Side: Main Column (Header + Messages + Input) */}
                     <div className="messages-container">
                         <header className="chat-header">
                             <div className="header-pill-inner">
@@ -2086,6 +2163,16 @@ Task Answer: ${finalInput}`;
                                 </div>
 
                                 <div className="header-right">
+                                    {roadmapType === 'course' && (
+                                        <button 
+                                            className="course-nav-btn glass-card"
+                                            onClick={() => setAppStage('course-index')}
+                                            title="Back to Course Index"
+                                        >
+                                            <BookOpen size={18} />
+                                            <span className="hide-mobile">Course</span>
+                                        </button>
+                                    )}
                                     <button
                                         className={`dashboard-pulse-btn ${showTrackSidebar ? 'active' : ''}`}
                                         onClick={() => setShowTrackSidebar(!showTrackSidebar)}
@@ -2111,23 +2198,7 @@ Task Answer: ${finalInput}`;
                                     <div className={`message glass-card ${msg.role} ${msg.isError ? 'error-msg' : ''}`}>
                                         {msg.role === 'model' && <GraduationCap size={16} className="tutor-icon" />}
                                         <div className="msg-content markdown-body">
-                                            {msg.role === 'model' ? (
-                                                <TutorSession 
-                                                    messages={messages}
-                                                    msgIndex={i}
-                                                    mcqState={mcqState}
-                                                    handleMcqSubmit={handleMcqSubmit}
-                                                    sendMessage={sendMessage}
-                                                    isLoading={isLoading}
-                                                    cooldown={cooldown}
-                                                    language={language}
-                                                    lastPrompt={lastPrompt}
-                                                    VisualMode={VisualMode}
-                                                    QuickMode={QuickMode}
-                                                />
-                                            ) : (
-                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                            )}
+                                            {msg.role === 'model' ? renderContent(msg, i) : renderContent(msg.content, i)}
                                         </div>
                                         {msg.isError && (
                                             <button className="retry-msg-btn" onClick={() => sendMessage(null, lastPrompt)}>
@@ -2153,7 +2224,7 @@ Task Answer: ${finalInput}`;
 
                         {error && (
                             <div className="chat-error-banner animate-fade-in">
-                                <span className="error-text">⚠️ {error}</span>
+                                <span className="error-text">âš ï¸ {error}</span>
                                 <button className="clear-error-btn" onClick={() => setError(null)} title="Clear error">
                                     <X size={18} />
                                 </button>
@@ -2188,15 +2259,13 @@ Task Answer: ${finalInput}`;
                     </div>
                 </div>
 
-                {/* 🗺️ DESKTOP SIDEBAR — moved OUTSIDE the flex container to prevent flex recalculation bugs when typing */}
-                {isDesktop && (roadmapData?.steps || bookIndex?.chapters) && (
+                {/* ðŸ—ºï¸  DESKTOP SIDEBAR â€” moved OUTSIDE the flex container to prevent flex recalculation bugs when typing */}
+                {isDesktop && roadmapData?.steps && (
                     <aside className="progress-sidebar desktop-fixed">
                         <SidebarContent
                             activeSidebarTab={activeSidebarTab}
                             setActiveSidebarTab={stableSetActiveSidebarTab}
                             roadmapData={roadmapData}
-                            bookIndex={bookIndex}
-                            selectedBook={selectedBook}
                             progress={progress}
                             autoNotes={autoNotes}
                             manualNotes={manualNotes}
@@ -2209,12 +2278,11 @@ Task Answer: ${finalInput}`;
                             onClose={stableCloseSidebar}
                             onLogout={handleLogout}
                             onReset={resetChat}
-                            setAppStage={setAppStage}
                         />
                     </aside>
                 )}
 
-                {/* 📱 MOBILE SIDEBAR — animated overlay only on small screens */}
+                {/* ðŸ“± MOBILE SIDEBAR â€” animated overlay only on small screens */}
                 {!isDesktop && (
                     <AnimatePresence initial={false}>
                         {showTrackSidebar && (
@@ -2230,8 +2298,6 @@ Task Answer: ${finalInput}`;
                                     activeSidebarTab={activeSidebarTab}
                                     setActiveSidebarTab={stableSetActiveSidebarTab}
                                     roadmapData={roadmapData}
-                                    bookIndex={bookIndex}
-                                    selectedBook={selectedBook}
                                     progress={progress}
                                     autoNotes={autoNotes}
                                     manualNotes={manualNotes}
@@ -2244,15 +2310,16 @@ Task Answer: ${finalInput}`;
                                     onClose={stableCloseSidebar}
                                     onLogout={handleLogout}
                                     onReset={resetChat}
-                                    setAppStage={setAppStage}
                                 />
                             </motion.aside>
                         )}
                     </AnimatePresence>
                 )}
+
             </div>
         </div>
     );
 }
 
 export default App;
+

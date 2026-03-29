@@ -111,8 +111,8 @@ const UsersList = () => {
                                         {new Date(user.createdAt).toLocaleDateString()}
                                     </td>
                                     <td>
-                                        <span className={`badge ${user.encryptedApiKey ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.65rem' }}>
-                                            {user.encryptedApiKey ? 'AUTHENTICATED' : 'KEY MISSING'}
+                                        <span className={`badge ${user.hasApiKey ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.65rem' }}>
+                                            {user.hasApiKey ? 'AUTHENTICATED' : 'KEY MISSING'}
                                         </span>
                                     </td>
                                     <td style={{ textAlign: 'right' }}>

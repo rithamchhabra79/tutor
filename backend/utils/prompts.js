@@ -44,9 +44,12 @@ RULES:
 - If student is OFF-TOPIC (asks about unrelated subject), set redirect field:
   "redirect": "🛑 Pehle [CURRENT_TOPIC] complete karo! [COMPLETED] concepts ho gaye. [NEXT] baaki hai. [NEW_TOPIC] baad mein seekhenge 💪"
   AND set explanation/task/mastery_check to null.
-- **NEW LEARNING MODES**:
-  - 📊 **Visual Mode** (Charts/SVG): Use \`\`\`visual blocks. For Charts (Bar/Line/Pie), provide JSON: {"type":"bar","data":[{"name":"A","value":10},...]}. For custom architectural diagrams, provide raw <svg>...</svg>.
-  - 📋 **Quick Mode** (Tables/Bullets): Use \`\`\`quick blocks. Focus on Markdown Tables and Bold Key Points for rapid scanning.
+- **NEW LEARNING MODES & SMART VISUALS**:
+  - 📊 **Visual Mode** (Charts/SVG): Use \`\`\`visual blocks. 
+    - **Charts**: Use for distributions (Pie), trends (Line/Area), or comparisons (Bar). JSON: {"type":"pie"|"bar"|"line"|"area","title":"Chart Title","data":[{"name":"A","value":10},...]}.
+    - **Architecture/Flow**: Use raw <svg>...</svg> for custom architectural diagrams, flowcharts, or structural breakdowns. Ensure SVGs are clean and use relative sizing where possible.
+    - **SMART RULE**: Only use Visual Mode when the concept is complex and benefits from a diagram or data visualization. Don't over-use it for simple text.
+  - 📋 **Quick Mode** (Tables/Bullets): Use \`\`\`quick blocks for rapid scanning of key facts, comparisons, or summaries. Focus on Markdown Tables and Bold Key Points.
 - Socratic Rule: If student asks something they SHOULD figure out — give a hint in 'hint' field, ask in mastery_check, don't directly explain in 'explanation'.
 - mastery_check MUST always be present (never null) when teaching a new concept.
 - xp_reward: 10 for explanation, 5 for hints, 0 for off-topic.
@@ -106,3 +109,39 @@ REQUIREMENTS:
 
 Tutoring conversation to transform into notes:
 ${conversationText}`;
+
+export const getCourseStructurePrompt = (topic, language) => `Create a logical high-level Full Course structure for: "${topic}".
+Language: ${language || 'English'}.
+The course should be divided into multiple semesters (usually 2-8 depending on the topic depth). Each semester must have multiple books.
+Each book should have a clear, academic title and a short motivating description.
+
+Return ONLY this JSON:
+{
+  "semesters": [
+    {
+      "semester": 1,
+      "books": [
+        {"title": "Book Name", "description": "Short summary", "emoji": "📚"},
+        ...
+      ]
+    },
+    ...
+  ]
+}`;
+
+export const getBookIndexPrompt = (bookTitle, topic, language) => `Create a detailed chapter-wise index for the book: "${bookTitle}" (part of "${topic}").
+Language: ${language || 'English'}.
+Ensure the chapters follow a strictly logical learning progression (Prerequisites -> Fundamentals -> Advanced -> Mastery).
+Each chapter should have multiple specific topics to teach.
+
+Return ONLY this JSON:
+{
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "chapter_title": "Title",
+      "topics": ["Specific Topic 1", "Specific Topic 2", ...]
+    },
+    ...
+  ]
+}`;
